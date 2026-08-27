@@ -78,6 +78,31 @@ Battery drain is a common weakness in this category. When adding the engine:
 - Run one properly-configured foreground service, not multiple wakelocks.
 - Prefer kernel-assisted paths where available over user-space copying.
 
+
+## Releases (installable APK)
+
+GitHub Actions *artifacts are ZIP files* — Android cannot install a zip. To get a
+directly installable `.apk`, use a Release:
+
+```
+git tag v1.0
+git push origin v1.0
+```
+
+The `Release` workflow builds a signed APK and publishes it as a GitHub Release
+asset (raw `.apk`, downloadable and installable directly), plus a Windows zip.
+
+### Signing secrets (for stable, Play-ready signing)
+
+Add these repo secrets so every build is signed with the same release key
+(required for app updates and Play). If they are absent, CI falls back to a
+throwaway key so the APK still installs for testing.
+
+- `ANDROID_KEYSTORE_BASE64` — base64 of your release keystore
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+
 ## Structure
 
 ```

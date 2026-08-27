@@ -44,14 +44,40 @@ jobs:
           --dart-define=LOCK_CLIENT_KEY=${{ secrets.LOCK_CLIENT_KEY }}
           --obfuscate --split-debug-info=build/symbols
 
-      - name: Upload APK
+      # Re-sign the APK with the stable release key (from secrets), or a throwaway
+      # key if none is set, so the produced APK is always installable.
+      - name: Sign APK
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -e
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > release.jks
+          else
+            KS_PASS=throwaway; KEY_ALIAS=oversea; KEY_PASS=throwaway
+            keytool -genkeypair -v -keystore release.jks -storetype PKCS12 \
+              -storepass "$KS_PASS" -keypass "$KEY_PASS" -alias "$KEY_ALIAS" \
+              -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Oversea, O=Oversea"
+          fi
+          BT=$(ls "$ANDROID_HOME"/build-tools | sort -V | tail -1)
+          "$ANDROID_HOME/build-tools/$BT/apksigner" sign \
+            --ks release.jks --ks-pass "pass:$KS_PASS" \
+            --ks-key-alias "$KEY_ALIAS" --key-pass "pass:$KEY_PASS" \
+            --out oversea-release.apk \
+            build/app/outputs/flutter-apk/app-release.apk
+          "$ANDROID_HOME/build-tools/$BT/apksigner" verify --verbose oversea-release.apk
+
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: oversea-apk
+          path: oversea-release.apk
 
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-aab
+          name: oversea-aab
           path: build/app/outputs/bundle/release/app-release.aab
