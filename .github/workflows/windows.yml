@@ -1,0 +1,35 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Generate Windows platform files
+        run: flutter create --platforms=windows --org com.tunnelclient .
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Build Windows (release)
+        run: flutter build windows --release --dart-define=LOCK_CLIENT_KEY=${{ secrets.LOCK_CLIENT_KEY }}
+
+      - name: Package release folder
+        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath tunnel-client-windows.zip
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: tunnel-client-windows
+          path: tunnel-client-windows.zip

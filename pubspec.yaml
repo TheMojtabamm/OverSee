@@ -1,0 +1,26 @@
+name: tunnel_client
+description: "Multi-protocol tunnel client — config management, locked configs, and free-config feeds."
+publish_to: "none"
+
+# نسخه‌ی اپ. برای گوگل‌پلی، بخشِ بعد از + (build number) باید هر آپلود یکی زیاد شود.
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # رمزنگاری برای سیستم قفلِ کانفیگ (AES-GCM + HMAC برای کلیدِ چرخشیِ روزانه).
+  cryptography: ^2.7.0
+  # گرفتنِ ساب و فیدِ کانفیگ‌های رایگان از سرور.
+  http: ^1.2.2
+  # ذخیره‌ی محلیِ کانفیگ‌های کاربر روی دستگاه.
+  shared_preferences: ^2.3.2
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

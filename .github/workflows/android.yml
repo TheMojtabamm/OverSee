@@ -1,0 +1,57 @@
+name: Android build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      # Platform folders are not committed (see README); CI generates them so
+      # they always match the runner's Flutter version.
+      - name: Generate Android platform files
+        run: flutter create --platforms=android --org com.tunnelclient .
+
+      - name: Get packages
+        run: flutter pub get
+
+      # LOCK_CLIENT_KEY is injected here from a repo secret and is never stored in
+      # the source tree. --obfuscate raises the bar on reversing the release binary.
+      - name: Build APK (release)
+        run: >
+          flutter build apk --release
+          --dart-define=LOCK_CLIENT_KEY=${{ secrets.LOCK_CLIENT_KEY }}
+          --obfuscate --split-debug-info=build/symbols
+
+      - name: Build App Bundle (release, for Google Play)
+        run: >
+          flutter build appbundle --release
+          --dart-define=LOCK_CLIENT_KEY=${{ secrets.LOCK_CLIENT_KEY }}
+          --obfuscate --split-debug-info=build/symbols
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: build/app/outputs/bundle/release/app-release.aab
