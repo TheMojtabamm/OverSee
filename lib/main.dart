@@ -4,6 +4,7 @@ import "models/vpn_config.dart";
 import "services/config_parser.dart";
 import "services/config_store.dart";
 import "services/subscription_service.dart";
+import "ui/free_configs_screen.dart";
 
 // Set this to your free-config feed server once it is running.
 const String kFreeFeedBaseUrl = "https://feed.example.com";
@@ -40,7 +41,7 @@ class _RootShellState extends State<RootShell> {
   Widget build(BuildContext context) {
     final pages = [
       const ConfigsScreen(),
-      const FreeConfigsScreen(),
+      const FreeConfigsScreen(feedBaseUrl: kFreeFeedBaseUrl),
       const SettingsScreen(),
     ];
     return Scaffold(
@@ -220,39 +221,6 @@ class _AddConfigScreenState extends State<AddConfigScreen> {
               ],
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// ───────────────────────── Free configs ─────────────────────────
-class FreeConfigsScreen extends StatelessWidget {
-  const FreeConfigsScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Free configs")),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.public, size: 48),
-              const SizedBox(height: 12),
-              const Text(
-                "The feed of channels publishing free configs appears here.",
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "To enable it, set the feed server URL ($kFreeFeedBaseUrl) in main.dart.",
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
         ),
       ),
     );
