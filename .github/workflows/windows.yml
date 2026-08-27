@@ -17,7 +17,7 @@ jobs:
           channel: stable
 
       - name: Generate Windows platform files
-        run: flutter create --platforms=windows --org com.tunnelclient .
+        run: flutter create --platforms=windows --org com.oversea .
 
       - name: Get packages
         run: flutter pub get
@@ -26,10 +26,10 @@ jobs:
         run: flutter build windows --release --dart-define=LOCK_CLIENT_KEY=${{ secrets.LOCK_CLIENT_KEY }}
 
       - name: Package release folder
-        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath tunnel-client-windows.zip
+        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath oversea-windows.zip
 
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: tunnel-client-windows
-          path: tunnel-client-windows.zip
+          name: oversea-windows
+          path: oversea-windows.zip

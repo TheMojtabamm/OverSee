@@ -8,14 +8,14 @@ import "services/subscription_service.dart";
 // Set this to your free-config feed server once it is running.
 const String kFreeFeedBaseUrl = "https://feed.example.com";
 
-void main() => runApp(const TunnelApp());
+void main() => runApp(const OverseaApp());
 
-class TunnelApp extends StatelessWidget {
-  const TunnelApp({super.key});
+class OverseaApp extends StatelessWidget {
+  const OverseaApp({super.key});
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: "Tunnel Client",
+      title: "Oversea",
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorSchemeSeed: const Color(0xFF38E1D4),

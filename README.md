@@ -1,6 +1,6 @@
-# Tunnel Client
+# Oversea
 
-Cross-platform tunnel client (Android + Windows for now). Flutter front end;
+Oversea — cross-platform tunnel client (Android + Windows for now). Flutter front end;
 native tunnel engines are added in a later phase.
 
 This repository is **code-only** and compiles on GitHub Actions — you do not need
@@ -31,7 +31,7 @@ a local Flutter install to produce builds.
 Push to `main` (or run the workflow manually). Artifacts:
 
 - `Android build` → `app-release.apk` and `app-release.aab`
-- `Windows build` → `tunnel-client-windows.zip`
+- `Windows build` → `oversea-windows.zip`
 
 ### Required repository secret
 

@@ -1,8 +1,8 @@
-name: tunnel_client
-description: "Multi-protocol tunnel client — config management, locked configs, and free-config feeds."
+name: oversea
+description: "Oversea — multi-protocol tunnel client with config management and locked configs."
 publish_to: "none"
 
-# نسخه‌ی اپ. برای گوگل‌پلی، بخشِ بعد از + (build number) باید هر آپلود یکی زیاد شود.
+# App version. For Google Play, bump the build number (after +) on every upload.
 version: 1.0.0+1
 
 environment:

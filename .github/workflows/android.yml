@@ -25,7 +25,7 @@ jobs:
       # Platform folders are not committed (see README); CI generates them so
       # they always match the runner's Flutter version.
       - name: Generate Android platform files
-        run: flutter create --platforms=android --org com.tunnelclient .
+        run: flutter create --platforms=android --org com.oversea .
 
       - name: Get packages
         run: flutter pub get

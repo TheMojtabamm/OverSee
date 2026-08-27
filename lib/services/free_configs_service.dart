@@ -39,7 +39,7 @@ class FreeConfigsService {
   Future<List<FreeChannel>> channels() async {
     final res = await http
         .get(Uri.parse("$feedBaseUrl/v1/channels"),
-            headers: {"User-Agent": "TunnelClient/1.0"})
+            headers: {"User-Agent": "Oversea/1.0"})
         .timeout(const Duration(seconds: 20));
     if (res.statusCode != 200) {
       throw Exception("Channel list fetch failed (${res.statusCode})");
@@ -53,7 +53,7 @@ class FreeConfigsService {
   Future<List<VpnConfig>> configsOf(FreeChannel channel) async {
     final res = await http
         .get(Uri.parse("$feedBaseUrl/v1/channels/${channel.ref}/configs"),
-            headers: {"User-Agent": "TunnelClient/1.0"})
+            headers: {"User-Agent": "Oversea/1.0"})
         .timeout(const Duration(seconds: 20));
     if (res.statusCode != 200) {
       throw Exception("Channel configs fetch failed (${res.statusCode})");

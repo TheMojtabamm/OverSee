@@ -11,7 +11,7 @@ import "config_parser.dart";
 class SubscriptionService {
   static Future<List<VpnConfig>> fetch(String url, {String? channelRef}) async {
     final res = await http
-        .get(Uri.parse(url), headers: {"User-Agent": "TunnelClient/1.0"})
+        .get(Uri.parse(url), headers: {"User-Agent": "Oversea/1.0"})
         .timeout(const Duration(seconds: 20));
 
     if (res.statusCode != 200) {
