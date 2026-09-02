@@ -23,3 +23,12 @@ pubspec.lock
 .env
 *.keystore
 key.properties
+
+# Go server
+server/oversea.db
+server/*.db
+server/served
+server/*.exe
+server/bin/
+.env.local
+.claude/

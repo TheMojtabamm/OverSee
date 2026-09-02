@@ -3,7 +3,7 @@ description: "Oversea — multi-protocol tunnel client with config management an
 publish_to: "none"
 
 # App version. For Google Play, bump the build number (after +) on every upload.
-version: 1.0.0+1
+version: 1.0.0-beta.1+1
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

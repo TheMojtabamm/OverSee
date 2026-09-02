@@ -28,6 +28,17 @@ jobs:
       - name: Generate Android platform files
         run: flutter create --platforms=android --org com.oversea .
 
+      # Support Android 7 (API 24) through Android 16 (API 36).
+      - name: Set minSdk for Android 7+ compatibility
+        run: |
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/' \
+            android/app/build.gradle android/app/build.gradle.kts 2>/dev/null || true
+          # also for the newer Kotlin DSL build file if present
+          if [ -f android/app/build.gradle.kts ]; then
+            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/' android/app/build.gradle.kts || true
+          fi
+          grep -rn "minSdk" android/app/ || true
+
       - run: flutter pub get
 
       - name: Build APK (release)
