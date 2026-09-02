@@ -44,7 +44,7 @@ jobs:
       - name: Build APK (release)
         run: >
           flutter build apk --release
-          --dart-define=LOCK_CLIENT_KEY=${{ secrets.LOCK_CLIENT_KEY }}
+          --dart-define=LOCK_CLIENT_KEY=0293fc78ffeaf2c46ab8f3bca7c92fffcb1345d8be7ec1cdc2e838772a75d5c9
           --obfuscate --split-debug-info=build/symbols
 
       # Re-sign with a stable release key (from secrets). If the secret is not set,
@@ -91,7 +91,7 @@ jobs:
         run: flutter create --platforms=windows --org com.oversea .
       - run: flutter pub get
       - name: Build Windows (release)
-        run: flutter build windows --release --dart-define=LOCK_CLIENT_KEY=${{ secrets.LOCK_CLIENT_KEY }}
+        run: flutter build windows --release --dart-define=LOCK_CLIENT_KEY=0293fc78ffeaf2c46ab8f3bca7c92fffcb1345d8be7ec1cdc2e838772a75d5c9
       - name: Package release folder
         run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath oversea-${{ github.ref_name }}-windows.zip
       - name: Attach Windows build to the Release

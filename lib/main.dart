@@ -1,15 +1,11 @@
-import "dart:convert";
-import "dart:io";
-
 import "package:flutter/material.dart";
-import "package:http/http.dart" as http;
-import "package:shared_preferences/shared_preferences.dart";
+import "package:flutter/services.dart";
 
-// ── Server URL ──────────────────────────────────────────────────────
-// Points at the local dev server; change for production.
-const String kBaseUrl = "http://10.0.2.2:8080"; // Android emulator localhost
+import "services/locked_config_codec.dart";
+import "services/config_store.dart";
+import "services/config_parser.dart" show ConfigParser;
+import "models/vpn_config.dart";
 
-// ── Entry ───────────────────────────────────────────────────────────
 void main() => runApp(const OverseaApp());
 
 class OverseaApp extends StatelessWidget {
@@ -29,7 +25,9 @@ class OverseaApp extends StatelessWidget {
   }
 }
 
-// ── Root Shell (bottom nav) ────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════
+//  ROOT SHELL — 3 tabs
+// ══════════════════════════════════════════════════════════════════════
 class RootShell extends StatefulWidget {
   const RootShell({super.key});
   @override
@@ -40,17 +38,18 @@ class _RootShellState extends State<RootShell> {
   int _tab = 0;
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      const FreeConfigsScreen(),
-      const OwnerScreen(),
-    ];
     return Scaffold(
-      body: pages[_tab],
+      body: [
+        const MyConfigsScreen(),
+        const ImportScreen(),
+        const OwnerScreen(),
+      ][_tab],
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.wifi), label: "Configs"),
+          NavigationDestination(icon: Icon(Icons.vpn_lock), label: "Configs"),
+          NavigationDestination(icon: Icon(Icons.download), label: "Import"),
           NavigationDestination(icon: Icon(Icons.admin_panel_settings), label: "Owner"),
         ],
       ),
@@ -59,16 +58,17 @@ class _RootShellState extends State<RootShell> {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-//  PUBLIC FEED SCREEN — shows channels + locked configs for import
+//  MY CONFIGS — list stored configs
 // ══════════════════════════════════════════════════════════════════════
-class FreeConfigsScreen extends StatefulWidget {
-  const FreeConfigsScreen({super.key});
+class MyConfigsScreen extends StatefulWidget {
+  const MyConfigsScreen({super.key});
   @override
-  State<FreeConfigsScreen> createState() => _FreeConfigsScreenState();
+  State<MyConfigsScreen> createState() => _MyConfigsScreenState();
 }
 
-class _FreeConfigsScreenState extends State<FreeConfigsScreen> {
-  List<dynamic> _channels = [];
+class _MyConfigsScreenState extends State<MyConfigsScreen> {
+  final ConfigStore _store = ConfigStore();
+  List<VpnConfig> _configs = [];
   bool _loading = true;
 
   @override
@@ -78,88 +78,194 @@ class _FreeConfigsScreenState extends State<FreeConfigsScreen> {
   }
 
   Future<void> _load() async {
+    final configs = await _store.load();
+    setState(() {
+      _configs = configs;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("My Configs (${_configs.length})"),
+        actions: [
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _configs.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.vpn_lock, size: 64, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text("No configs yet.", style: TextStyle(color: Colors.grey, fontSize: 16)),
+                      SizedBox(height: 8),
+                      Text("Tap Import tab to add configs.",
+                          style: TextStyle(color: Colors.grey)),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  itemCount: _configs.length,
+                  itemBuilder: (_, i) {
+                    final c = _configs[i];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      child: ListTile(
+                        leading: Icon(
+                          c.protocol == VpnProtocol.vless
+                              ? Icons.shield
+                              : c.protocol == VpnProtocol.vmess
+                                  ? Icons.lock
+                                  : Icons.wifi,
+                          color: const Color(0xFF38E1D4),
+                        ),
+                        title: Text(c.name.isNotEmpty ? c.name : (c.host ?? "?")),
+                        subtitle: Text("${c.protocol.label} • ${c.host ?? "?"}"),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.copy, size: 20),
+                              onPressed: () {
+                                Clipboard.setData(ClipboardData(text: c.raw));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text("Config copied")),
+                                );
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, size: 20, color: Colors.red),
+                              onPressed: () async {
+                                await _store.remove(c.id);
+                                _load();
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  IMPORT — paste locked blob → decrypt locally → save
+// ══════════════════════════════════════════════════════════════════════
+class ImportScreen extends StatefulWidget {
+  const ImportScreen({super.key});
+  @override
+  State<ImportScreen> createState() => _ImportScreenState();
+}
+
+class _ImportScreenState extends State<ImportScreen> {
+  final _ctrl = TextEditingController();
+  String? _result;
+  bool? _success; // null = no attempt yet
+
+  Future<void> _import() async {
+    final blob = _ctrl.text.trim();
+    if (blob.isEmpty) return;
+
     try {
-      final r = await http.get(Uri.parse("$kBaseUrl/v1/channels"));
-      if (r.statusCode == 200) {
-        final data = jsonDecode(r.body);
-        setState(() {
-          _channels = data["channels"] ?? [];
-          _loading = false;
-        });
+      final decoded = await LockedConfigCodec.decode(blob);
+      if (decoded != null && decoded.isNotEmpty) {
+        final configs = ConfigParser.parseMany(decoded);
+        if (configs.isNotEmpty) {
+          final store = ConfigStore();
+          await store.add(configs);
+          if (!mounted) return;
+          setState(() {
+            final name = configs.first.name;
+            _result = "✅ Imported: ${name.isNotEmpty ? name : configs.first.host ?? "config"}";
+            _success = true;
+          });
+          _ctrl.clear();
+        } else {
+          setState(() {
+            _result = "❌ Decrypted but could not parse config";
+            _success = false;
+          });
+        }
       } else {
-        setState(() => _loading = false);
+        setState(() {
+          _result = "❌ Could not decrypt — invalid blob or wrong key";
+          _success = false;
+        });
       }
-    } catch (_) {
-      setState(() => _loading = false);
+    } catch (e) {
+      setState(() {
+        _result = "❌ Error: $e";
+        _success = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Free Configs")),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _channels.isEmpty
-              ? const Center(child: Text("No channels yet.\nCreate one in the Owner tab.",
-                  textAlign: TextAlign.center))
-              : ListView.builder(
-                  itemCount: _channels.length,
-                  itemBuilder: (_, i) {
-                    final ch = _channels[i];
-                    return ListTile(
-                      leading: const Icon(Icons.public),
-                      title: Text(ch["title"] ?? "?"),
-                      subtitle: Text("${ch["configCount"] ?? 0} configs"),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _showConfigs(ch["ref"]),
-                    );
-                  },
-                ),
-    );
-  }
-
-  void _showConfigs(String ref) async {
-    try {
-      final r = await http.get(Uri.parse("$kBaseUrl/v1/channels/$ref/configs"));
-      if (r.statusCode == 200) {
-        final data = jsonDecode(r.body);
-        final configs = data["configs"] ?? [];
-        final ad = data["ad"] ?? {};
-        if (!mounted) return;
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: Text("Configs for $ref"),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (ad["text"] != null) ...[
-                  Text(ad["text"], style: const TextStyle(color: Colors.amber)),
-                  const SizedBox(height: 12),
-                ],
-                ...configs.map<Widget>((c) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: SelectableText(c["data"] ?? "empty",
-                      style: const TextStyle(fontSize: 11, fontFamily: "monospace")),
-                )),
-              ],
+      appBar: AppBar(title: const Text("Import Config")),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Icon(Icons.download, size: 48, color: Color(0xFF38E1D4)),
+            const SizedBox(height: 12),
+            const Text(
+              "Paste a locked config blob from Telegram:",
+              style: TextStyle(fontSize: 16),
+              textAlign: TextAlign.center,
             ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text("Close")),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _ctrl,
+              maxLines: 6,
+              decoration: const InputDecoration(
+                hintText: "Paste locked blob here...",
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _import,
+              icon: const Icon(Icons.download),
+              label: const Text("Import & Decrypt"),
+            ),
+            if (_result != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: (_success == true)
+                      ? Colors.green.withAlpha(25)
+                      : Colors.red.withAlpha(25),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: (_success == true) ? Colors.green : Colors.red,
+                  ),
+                ),
+                child: Text(_result!, style: TextStyle(
+                  color: (_success == true) ? Colors.green : Colors.red,
+                )),
+              ),
             ],
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
-    }
+          ],
+        ),
+      ),
+    );
   }
 }
 
 // ══════════════════════════════════════════════════════════════════════
-//  OWNER SCREEN — register/login → create channel → lock config → export
+//  OWNER — lock config locally, export locked blob for Telegram
 // ══════════════════════════════════════════════════════════════════════
 class OwnerScreen extends StatefulWidget {
   const OwnerScreen({super.key});
@@ -168,335 +274,127 @@ class OwnerScreen extends StatefulWidget {
 }
 
 class _OwnerScreenState extends State<OwnerScreen> {
-  String? _token;
-  String _email = "";
-  String _password = "";
-  List<dynamic> _channels = [];
-  bool _loading = false;
+  final _ctrl = TextEditingController();
+  String? _lockedResult;
+  bool? _locked;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadToken();
-  }
+  Future<void> _lockConfig() async {
+    final raw = _ctrl.text.trim();
+    if (raw.isEmpty) return;
 
-  Future<void> _loadToken() async {
-    final sp = await SharedPreferences.getInstance();
-    final tok = sp.getString("owner_token");
-    if (tok != null) {
-      setState(() => _token = tok);
-      _loadChannels();
-    }
-  }
-
-  Future<void> _saveToken(String t) async {
-    final sp = await SharedPreferences.getInstance();
-    await sp.setString("owner_token", t);
-    setState(() => _token = t);
-  }
-
-  // ── Auth ────────────────────────────────────────────────────────
-  Future<void> _auth(String path) async {
-    setState(() => _loading = true);
     try {
-      final r = await http.post(
-        Uri.parse("$kBaseUrl/v1/owner/$path"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"email": _email, "password": _password}),
-      );
-      final data = jsonDecode(r.body);
-      if (r.statusCode == 200 && data["token"] != null) {
-        await _saveToken(data["token"]);
-        _loadChannels();
-      } else {
-        _snack(data["error"] ?? "auth failed (${r.statusCode})");
-      }
+      final locked = await LockedConfigCodec.encode(raw);
+      setState(() {
+        _lockedResult = locked;
+        _locked = true;
+      });
     } catch (e) {
-      _snack("Error: $e");
+      setState(() {
+        _lockedResult = "❌ Lock failed: $e";
+        _locked = false;
+      });
     }
-    setState(() => _loading = false);
-  }
-
-  // ── Channels ────────────────────────────────────────────────────
-  Future<void> _loadChannels() async {
-    if (_token == null) return;
-    try {
-      final r = await http.get(
-        Uri.parse("$kBaseUrl/v1/owner/channels"),
-        headers: {"Authorization": "Bearer $_token"},
-      );
-      if (r.statusCode == 200) {
-        final data = jsonDecode(r.body);
-        setState(() => _channels = data["channels"] ?? []);
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _createChannel() async {
-    final ctrl = TextEditingController();
-    await showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("New Channel"),
-        content: TextField(controller: ctrl, decoration: const InputDecoration(labelText: "Title")),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
-          FilledButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              final r = await http.post(
-                Uri.parse("$kBaseUrl/v1/owner/channels"),
-                headers: {"Content-Type": "application/json", "Authorization": "Bearer $_token"},
-                body: jsonEncode({"title": ctrl.text}),
-              );
-              if (r.statusCode == 200) _loadChannels();
-              else _snack("create failed");
-            },
-            child: const Text("Create"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Lock config → export file ───────────────────────────────────
-  Future<void> _lockConfig(String ref) async {
-    final ctrl = TextEditingController();
-    await showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Lock Config"),
-        content: TextField(
-          controller: ctrl,
-          maxLines: 5,
-          decoration: const InputDecoration(
-            labelText: "Paste raw config (vless://, vmess://, ...)",
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
-          FilledButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              final r = await http.post(
-                Uri.parse("$kBaseUrl/v1/owner/channels/$ref/blobs"),
-                headers: {"Content-Type": "application/json", "Authorization": "Bearer $_token"},
-                body: jsonEncode({"config": ctrl.text}),
-              );
-              if (r.statusCode == 200) {
-                final data = jsonDecode(r.body);
-                _exportLocked(data);
-              } else {
-                final data = jsonDecode(r.body);
-                _snack(data["error"] ?? "lock failed");
-              }
-            },
-            child: const Text("Lock & Export"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _exportLocked(Map<String, dynamic> data) {
-    final locked = data["locked"] ?? "";
-    final blobId = data["blobId"] ?? "";
-    final meta = data["meta"] ?? {};
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("✅ Locked Config"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("Protocol: ${meta["protocol"] ?? "?"}"),
-            Text("Host: ${meta["host"] ?? "?"}"),
-            Text("Title: ${meta["title"] ?? "?"}"),
-            const Divider(),
-            const Text("Locked blob (copy & share):",
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            SelectableText(locked, style: const TextStyle(fontSize: 10, fontFamily: "monospace")),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Close")),
-        ],
-      ),
-    );
-  }
-
-  void _snack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   @override
   Widget build(BuildContext context) {
-    // ── Not logged in → show auth form ──
-    if (_token == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text("Owner")),
-        body: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.admin_panel_settings, size: 64, color: Color(0xFF38E1D4)),
-              const SizedBox(height: 24),
-              TextField(
-                decoration: const InputDecoration(labelText: "Email", border: OutlineInputBorder()),
-                onChanged: (v) => _email = v,
+    return Scaffold(
+      appBar: AppBar(title: const Text("Owner — Lock Config")),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Icon(Icons.admin_panel_settings, size: 48, color: Color(0xFF38E1D4)),
+            const SizedBox(height: 12),
+            const Text(
+              "Paste your raw config below to lock it.\n"
+              "The locked blob can be shared on Telegram.\n"
+              "Only Oversea app can decrypt it.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _ctrl,
+              maxLines: 6,
+              decoration: const InputDecoration(
+                hintText: "vless://uuid@host:443?...#Name",
+                border: OutlineInputBorder(),
+                labelText: "Raw config",
               ),
-              const SizedBox(height: 12),
-              TextField(
-                obscureText: true,
-                decoration: const InputDecoration(labelText: "Password", border: OutlineInputBorder()),
-                onChanged: (v) => _password = v,
-              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _lockConfig,
+              icon: const Icon(Icons.lock),
+              label: const Text("Lock Config"),
+            ),
+            if (_locked != null) ...[
               const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: _loading ? null : () => _auth("register"),
-                      child: const Text("Register"),
-                    ),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: (_locked == true)
+                      ? Colors.green.withAlpha(25)
+                      : Colors.red.withAlpha(25),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: (_locked == true) ? Colors.green : Colors.red,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: _loading ? null : () => _auth("login"),
-                      child: const Text("Login"),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _locked == true ? "✅ Locked!" : _lockedResult!,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: (_locked == true) ? Colors.green : Colors.red,
+                      ),
                     ),
-                  ),
-                ],
+                    if (_locked == true) ...[
+                      const SizedBox(height: 8),
+                      const Text("Locked blob (copy & paste to Telegram):",
+                          style: TextStyle(color: Colors.grey)),
+                      const SizedBox(height: 4),
+                      SelectableText(
+                        _lockedResult!,
+                        style: const TextStyle(fontSize: 10, fontFamily: "monospace"),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          FilledButton.tonal(
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: _lockedResult!));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("✅ Copied!")),
+                              );
+                            },
+                            child: const Text("📋 Copy"),
+                          ),
+                          const SizedBox(width: 12),
+                          FilledButton.tonal(
+                            onPressed: () {
+                              _ctrl.clear();
+                              setState(() {
+                                _lockedResult = null;
+                                _locked = null;
+                              });
+                            },
+                            child: const Text("🔄 New Config"),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ],
-          ),
-        ),
-      );
-    }
-
-    // ── Logged in → channel list ──
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Owner Dashboard"),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadChannels,
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              final sp = await SharedPreferences.getInstance();
-              await sp.remove("owner_token");
-              setState(() {
-                _token = null;
-                _channels = [];
-              });
-            },
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _createChannel,
-        child: const Icon(Icons.add),
-      ),
-      body: _channels.isEmpty
-          ? const Center(child: Text("No channels yet.\nTap + to create one."))
-          : ListView.builder(
-              itemCount: _channels.length,
-              itemBuilder: (_, i) {
-                final ch = _channels[i];
-                final ref = ch["ref"] ?? "";
-                final stats = ch["stats"] ?? {};
-                return Card(
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: ListTile(
-                    title: Text(ch["title"] ?? "?",
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text(
-                        "configs: ${ch["configCount"] ?? 0}  •  "
-                        "live: ${stats["liveConnections"] ?? 0}  •  "
-                        "total: ${stats["totalConnections"] ?? 0}"),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _showChannelDetail(ref, ch),
-                  ),
-                );
-              },
-            ),
-    );
-  }
-
-  void _showChannelDetail(String ref, Map<String, dynamic> ch) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        expand: false,
-        builder: (_, ctrl) => ListView(
-          controller: ctrl,
-          padding: const EdgeInsets.all(16),
-          children: [
-            Center(
-              child: Container(
-                width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: Colors.grey[700],
-                    borderRadius: BorderRadius.circular(2)),
-              ),
-            ),
-            Text(ch["title"] ?? "?", style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 4),
-            Text("ref: $ref", style: const TextStyle(color: Colors.grey)),
-            if (ch["adText"] != null && ch["adText"] != "")
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text("Ad: ${ch["adText"]}", style: const TextStyle(color: Colors.amber)),
-              ),
-            const Divider(height: 24),
-            FilledButton.icon(
-              onPressed: () { Navigator.pop(context); _lockConfig(ref); },
-              icon: const Icon(Icons.lock),
-              label: const Text("Lock New Config"),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () { Navigator.pop(context); _revokeChannel(ref); },
-              icon: const Icon(Icons.delete_outline, color: Colors.red),
-              label: const Text("Revoke Channel", style: TextStyle(color: Colors.red)),
-            ),
           ],
         ),
       ),
     );
-  }
-
-  void _revokeChannel(String ref) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Revoke Channel?"),
-        content: const Text("This will revoke ALL configs. Irreversible."),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
-          FilledButton(onPressed: () => Navigator.pop(context, true),
-              child: const Text("Revoke", style: TextStyle(color: Colors.red))),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final r = await http.delete(
-      Uri.parse("$kBaseUrl/v1/owner/channels/$ref"),
-      headers: {"Authorization": "Bearer $_token"},
-    );
-    if (r.statusCode == 200) {
-      _loadChannels();
-    } else {
-      _snack("revoke failed");
-    }
   }
 }
