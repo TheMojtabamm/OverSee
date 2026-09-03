@@ -3,9 +3,9 @@
 // (share_plus + shared_preferences + jni need it) and minSdk to 24 (Android 7+).
 
 plugins {
-    id "com.android.application"
-    id "kotlin-android"
-    id "dev.flutter.flutter-gradle-plugin"
+    id("com.android.application")
+    id("kotlin-android")
+    id("dev.flutter.flutter-gradle-plugin")
 }
 
 android {
