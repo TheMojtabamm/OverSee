@@ -1,11 +1,13 @@
+import com.android.build.gradle.BaseExtension
+
 // Root Android build file — CI copies this over the file `flutter create`
 // generates in android/build.gradle.kts.
 //
-// Flutter 3.47.2 uses android.newDsl=false (legacy AGP path). Plugin modules
-// (share_plus and its transitive androidx deps, jni, shared_preferences) take
-// their compileSdk from `flutter.compileSdkVersion`. We force a literal 36 on
-// every android subproject so the build succeeds regardless of that value.
-// This only affects compilation — minSdk stays 24 (Android 7+).
+// Force every Android module (app + plugins like share_plus) to compile against
+// SDK 36. share_plus and its transitive androidx deps (window, activity,
+// fragment, lifecycle...) require compileSdk >= 34; jni/shared_preferences
+// newer builds need up to 36. Only compilation is affected — minSdk stays 24
+// (Android 7+), so supported devices are unchanged.
 
 allprojects {
     repositories {
@@ -17,15 +19,11 @@ allprojects {
 val newBuildDir = rootProject.layout.buildDirectory
 rootProject.layout.buildDirectory = newBuildDir.get()
 
-// Force all app/plugin android modules to compile against SDK 36.
 subprojects {
-    afterEvaluate { project ->
-        if (project.hasProperty("android")) {
-            val androidExt = project.extensions.findByName("android")
-            if (androidExt is com.android.build.gradle.BaseExtension) {
-                androidExt.compileSdkVersion = 36
-                androidExt.minSdkVersion = 24
-            }
+    afterEvaluate {
+        val androidExt = extensions.findByType(BaseExtension::class.java)
+        if (androidExt != null) {
+            androidExt.compileSdkVersion(36)
         }
     }
 }

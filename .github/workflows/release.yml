@@ -28,14 +28,19 @@ jobs:
       - name: Generate Android platform files
         run: flutter create --platforms=android --org com.oversea .
 
-      # Overwrite the generated Gradle files with committed versions that pin
-      # compileSdk=36 and minSdk=24. flutter create still provides the Gradle
-      # wrapper jar, MainActivity, and resources; only the build config changes.
+      # Pin compileSdk=36 and minSdk=24. The app build.gradle.kts is fully
+      # replaced; the ROOT build.gradle.kts is replaced with a committed version
+      # that preserves Flutter's standard root config and adds a subprojects
+      # compileSdk override (so plugin modules like share_plus compile at 36).
+      # flutter create still provides the Gradle wrapper jar, MainActivity, and
+      # resources.
       - name: Pin SDK versions (minSdk 24, compileSdk 36)
         run: |
-          cp .github/android/build.gradle.kts android/build.gradle.kts
           cp .github/android/app-build.gradle.kts android/app/build.gradle.kts
-          grep -rn "minSdk\|compileSdk" android/ || true
+          if [ -f android/build.gradle.kts ]; then
+            cp .github/android/build.gradle.kts android/build.gradle.kts
+          fi
+          grep -rhn "compileSdk\|minSdk" android/build.gradle* android/app/build.gradle.kts || true
 
       - run: flutter pub get
 
