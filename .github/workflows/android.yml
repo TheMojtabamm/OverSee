@@ -28,9 +28,15 @@ jobs:
         run: flutter create --platforms=android --org com.oversea .
 
       # Current plugin versions require compileSdk up to 36; minSdk 24 = Android 7+.
-      # The compileSdk bump only affects compilation, not minimum supported devices.
+      # Plugin modules inherit compileSdk from flutter.compileSdkVersion in the ROOT
+      # build.gradle (subprojects/afterEvaluate), so override it there too.
       - name: Set SDK versions (minSdk 24, compileSdk 36)
         run: |
+          for f in android/build.gradle android/build.gradle.kts; do
+            [ -f "$f" ] || continue
+            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' "$f"
+            sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' "$f"
+          done
           sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/' \
             android/app/build.gradle android/app/build.gradle.kts 2>/dev/null || true
           sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' \
@@ -40,7 +46,7 @@ jobs:
           if [ -f android/app/build.gradle.kts ]; then
             sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/' android/app/build.gradle.kts || true
           fi
-          grep -rn "minSdk\|compileSdk" android/app/ || true
+          grep -rn "minSdk\|compileSdk" android/ || true
 
       - name: Get packages
         run: flutter pub get
