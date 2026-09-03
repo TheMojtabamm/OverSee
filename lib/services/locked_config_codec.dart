@@ -69,10 +69,18 @@ class LockedConfigCodec {
   /// Locks a raw config into a base64url blob. This is the "generate" side and
   /// normally runs in the server-side tool; it is here so the same code path can
   /// also be exercised in tests and local builds that carry the key.
+  ///
+  /// When [adText] or [telegramUrl] are provided they are embedded inside the
+  /// encrypted envelope so the receiver's app can show the owner's ad before
+  /// (or during) connection. The plaintext that gets encrypted is either:
+  ///  - a JSON envelope: `{"c":"<config>","a":"<ad>","t":"<tg>"}`
+  ///  - the raw config string (when no ad/tg are set, backward-compatible).
   static Future<String> encode(
     String plaintextConfig, {
     int? epoch,
     String serverComponent = "",
+    String? adText,
+    String? telegramUrl,
   }) async {
     if (!hasKey) {
       throw StateError("No key material (LOCK_CLIENT_KEY) available at build.");
@@ -80,13 +88,28 @@ class LockedConfigCodec {
     final ep = epoch ?? currentEpoch();
     final key = await _deriveKey(ep, serverComponent);
 
+    // Build the plaintext that gets encrypted. If ad/tg metadata are provided
+    // we wrap everything in a JSON envelope so the receiver's app can display
+    // the owner's ad/telegram before connecting.
+    String plaintext;
+    if (adText != null && adText.isNotEmpty ||
+        telegramUrl != null && telegramUrl.isNotEmpty) {
+      plaintext = jsonEncode({
+        "c": plaintextConfig,
+        if (adText != null && adText.isNotEmpty) "a": adText,
+        if (telegramUrl != null && telegramUrl.isNotEmpty) "t": telegramUrl,
+      });
+    } else {
+      plaintext = plaintextConfig;
+    }
+
     // Header (magic + version + epoch) is authenticated as AAD so it can't be
     // tampered with.
     final header = Uint8List.fromList([..._magic, _version, ..._uint32be(ep)]);
 
     final aes = AesGcm.with256bits();
     final box = await aes.encrypt(
-      utf8.encode(plaintextConfig),
+      utf8.encode(plaintext),
       secretKey: key,
       aad: header,
     );
@@ -143,6 +166,27 @@ class LockedConfigCodec {
     return utf8.decode(clear);
   }
 
+  /// Decode a locked blob and return structured metadata. If the encrypted
+  /// payload is a JSON envelope it is parsed; otherwise [ConfigEnvelope.config]
+  /// is the raw config with no ad/tg.
+  static Future<ConfigEnvelope> decodeConfig(
+    String blobBase64, {
+    Future<String> Function(int epoch)? serverComponentFor,
+  }) async {
+    final plain = await decode(blobBase64, serverComponentFor: serverComponentFor);
+    try {
+      final j = jsonDecode(plain) as Map<String, dynamic>;
+      if (j.containsKey("c")) {
+        return ConfigEnvelope(
+          j["c"] as String,
+          adText: j["a"] as String?,
+          telegramUrl: j["t"] as String?,
+        );
+      }
+    } catch (_) {}
+    return ConfigEnvelope(plain);
+  }
+
   /// Cheap check whether a string looks like one of our locked blobs (no
   /// decryption attempted).
   static bool looksLocked(String s) {
@@ -171,4 +215,13 @@ class LockedConfigCodec {
     final mod = clean.length % 4;
     return mod == 0 ? clean : clean + ("=" * (4 - mod));
   }
+}
+
+/// Structured result from [LockedConfigCodec.decodeConfig] — carries the
+/// config string plus optional owner metadata (ad text, Telegram URL).
+class ConfigEnvelope {
+  final String config;
+  final String? adText;
+  final String? telegramUrl;
+  const ConfigEnvelope(this.config, {this.adText, this.telegramUrl});
 }

@@ -28,31 +28,13 @@ jobs:
       - name: Generate Android platform files
         run: flutter create --platforms=android --org com.oversea .
 
-      # Support Android 7 (API 24) through Android 16 (API 36).
-      # Plugin modules (share_plus, shared_preferences, etc.) take their
-      # compileSdk from `flutter.compileSdkVersion` in the ROOT android/build.gradle
-      # (via the subprojects/afterEvaluate block that `flutter create` emits), so
-      # we must override it there too — editing only app/build.gradle is not enough.
-      # We pin compile to 36 explicitly everywhere; minSdk stays 24 (Android 7+),
-      # so this only affects compilation, not minimum supported devices.
-      - name: Set SDK versions (minSdk 24, compileSdk 36)
+      # Overwrite the generated Gradle files with committed versions that pin
+      # compileSdk=36 and minSdk=24. flutter create still provides the Gradle
+      # wrapper jar, MainActivity, and resources; only the build config changes.
+      - name: Pin SDK versions (minSdk 24, compileSdk 36)
         run: |
-          # Root build file(s): plugins inherit compileSdk from flutter.compileSdkVersion
-          for f in android/build.gradle android/build.gradle.kts; do
-            [ -f "$f" ] || continue
-            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' "$f"
-            sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' "$f"
-          done
-          # App module: minSdk 24, compileSdk 36
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/' \
-            android/app/build.gradle android/app/build.gradle.kts 2>/dev/null || true
-          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' \
-            android/app/build.gradle.kts 2>/dev/null || true
-          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' \
-            android/app/build.gradle 2>/dev/null || true
-          if [ -f android/app/build.gradle.kts ]; then
-            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/' android/app/build.gradle.kts || true
-          fi
+          cp .github/android/build.gradle.kts android/build.gradle.kts
+          cp .github/android/app-build.gradle.kts android/app/build.gradle.kts
           grep -rn "minSdk\|compileSdk" android/ || true
 
       - run: flutter pub get
@@ -60,7 +42,7 @@ jobs:
       - name: Build APK (release)
         run: >
           flutter build apk --release
-          --dart-define=LOCK_CLIENT_KEY=0293fc78ffeaf2c46ab8f3bca7c92fffcb1345d8be7ec1cdc2e838772a75d5c9
+          --dart-define=LOCK_CLIENT_KEY=${{ secrets.LOCK_CLIENT_KEY }}
           --obfuscate --split-debug-info=build/symbols
 
       # Re-sign with a stable release key (from secrets). If the secret is not set,
@@ -107,7 +89,7 @@ jobs:
         run: flutter create --platforms=windows --org com.oversea .
       - run: flutter pub get
       - name: Build Windows (release)
-        run: flutter build windows --release --dart-define=LOCK_CLIENT_KEY=0293fc78ffeaf2c46ab8f3bca7c92fffcb1345d8be7ec1cdc2e838772a75d5c9
+        run: flutter build windows --release --dart-define=LOCK_CLIENT_KEY=${{ secrets.LOCK_CLIENT_KEY }}
       - name: Package release folder
         run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath oversea-${{ github.ref_name }}-windows.zip
       - name: Attach Windows build to the Release

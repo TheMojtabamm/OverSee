@@ -49,6 +49,14 @@ class VpnConfig {
   /// If it came from a feed channel, that channel's ref (for stats/attribution).
   final String? channelRef;
 
+  /// Optional ad text the channel owner wants shown before the user connects.
+  /// Carried inside the locked blob when the owner locks a config.
+  final String? adText;
+
+  /// Optional Telegram channel URL to open (web preview / ad) when the user
+  /// taps this config. Carried inside the locked blob.
+  final String? telegramUrl;
+
   const VpnConfig({
     required this.id,
     required this.name,
@@ -58,6 +66,8 @@ class VpnConfig {
     this.host,
     this.port,
     this.channelRef,
+    this.adText,
+    this.telegramUrl,
   });
 
   Map<String, dynamic> toJson() => {
@@ -69,6 +79,8 @@ class VpnConfig {
         "raw": raw,
         "source": source,
         "channelRef": channelRef,
+        "adText": adText,
+        "telegramUrl": telegramUrl,
       };
 
   factory VpnConfig.fromJson(Map<String, dynamic> j) => VpnConfig(
@@ -83,5 +95,32 @@ class VpnConfig {
         raw: j["raw"] as String,
         source: (j["source"] as String?) ?? "manual",
         channelRef: j["channelRef"] as String?,
+        adText: j["adText"] as String?,
+        telegramUrl: j["telegramUrl"] as String?,
+      );
+
+  VpnConfig copyWith({
+    String? id,
+    String? name,
+    VpnProtocol? protocol,
+    String? host,
+    int? port,
+    String? raw,
+    String? source,
+    String? channelRef,
+    String? adText,
+    String? telegramUrl,
+  }) =>
+      VpnConfig(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        protocol: protocol ?? this.protocol,
+        host: host ?? this.host,
+        port: port ?? this.port,
+        raw: raw ?? this.raw,
+        source: source ?? this.source,
+        channelRef: channelRef ?? this.channelRef,
+        adText: adText ?? this.adText,
+        telegramUrl: telegramUrl ?? this.telegramUrl,
       );
 }

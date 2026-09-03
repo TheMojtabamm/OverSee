@@ -16,8 +16,10 @@ dependencies:
   cryptography: ^2.7.0
   # ذخیره‌ی محلیِ کانفیگ‌های کاربر روی دستگاه.
   shared_preferences: ^2.3.2
-  # اشتراک‌گذاری فایل/متن (Telegram و...)
+  # اشتراک‌گذاری فایل/متن (Telegram و...) — requires compileSdk 34+ in CI.
   share_plus: ^7.2.2
+  # Open telegram/web links (ad/channel preview).
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_lints: ^4.0.0

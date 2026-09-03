@@ -27,25 +27,13 @@ jobs:
       - name: Generate Android platform files
         run: flutter create --platforms=android --org com.oversea .
 
-      # Current plugin versions require compileSdk up to 36; minSdk 24 = Android 7+.
-      # Plugin modules inherit compileSdk from flutter.compileSdkVersion in the ROOT
-      # build.gradle (subprojects/afterEvaluate), so override it there too.
-      - name: Set SDK versions (minSdk 24, compileSdk 36)
+      # Overwrite the generated Gradle files with committed versions that pin
+      # compileSdk=36 and minSdk=24 (flutter create still provides wrapper jar,
+      # MainActivity, resources).
+      - name: Pin SDK versions (minSdk 24, compileSdk 36)
         run: |
-          for f in android/build.gradle android/build.gradle.kts; do
-            [ -f "$f" ] || continue
-            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' "$f"
-            sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' "$f"
-          done
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/' \
-            android/app/build.gradle android/app/build.gradle.kts 2>/dev/null || true
-          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' \
-            android/app/build.gradle.kts 2>/dev/null || true
-          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/' \
-            android/app/build.gradle 2>/dev/null || true
-          if [ -f android/app/build.gradle.kts ]; then
-            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/' android/app/build.gradle.kts || true
-          fi
+          cp .github/android/build.gradle.kts android/build.gradle.kts
+          cp .github/android/app-build.gradle.kts android/app/build.gradle.kts
           grep -rn "minSdk\|compileSdk" android/ || true
 
       - name: Get packages
@@ -53,18 +41,16 @@ jobs:
 
       # LOCK_CLIENT_KEY is injected here from a repo secret and is never stored in
       # the source tree. --obfuscate raises the bar on reversing the release binary.
-      # NOTE: until the LOCK_CLIENT_KEY secret is configured in the repo, CI falls
-      # back to the shared dev key so builds are consistent and installable.
       - name: Build APK (release)
         run: >
           flutter build apk --release
-          --dart-define=LOCK_CLIENT_KEY=${{ secrets.LOCK_CLIENT_KEY || '0293fc78ffeaf2c46ab8f3bca7c92fffcb1345d8be7ec1cdc2e838772a75d5c9' }}
+          --dart-define=LOCK_CLIENT_KEY=${{ secrets.LOCK_CLIENT_KEY }}
           --obfuscate --split-debug-info=build/symbols
 
       - name: Build App Bundle (release, for Google Play)
         run: >
           flutter build appbundle --release
-          --dart-define=LOCK_CLIENT_KEY=${{ secrets.LOCK_CLIENT_KEY || '0293fc78ffeaf2c46ab8f3bca7c92fffcb1345d8be7ec1cdc2e838772a75d5c9' }}
+          --dart-define=LOCK_CLIENT_KEY=${{ secrets.LOCK_CLIENT_KEY }}
           --obfuscate --split-debug-info=build/symbols
 
       # Re-sign the APK with the stable release key (from secrets), or a throwaway
