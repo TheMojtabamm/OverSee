@@ -1,9 +1,10 @@
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
+import "package:share_plus/share_plus.dart";
 
 import "services/locked_config_codec.dart";
 import "services/config_store.dart";
-import "services/config_parser.dart" show ConfigParser;
+import "services/config_parser.dart";
 import "models/vpn_config.dart";
 
 void main() => runApp(const OverseaApp());
@@ -58,7 +59,7 @@ class _RootShellState extends State<RootShell> {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-//  MY CONFIGS — list stored configs
+//  MY CONFIGS — stored configs (NO COPY for locked ones)
 // ══════════════════════════════════════════════════════════════════════
 class MyConfigsScreen extends StatefulWidget {
   const MyConfigsScreen({super.key});
@@ -85,6 +86,14 @@ class _MyConfigsScreenState extends State<MyConfigsScreen> {
     });
   }
 
+  Future<void> _connect(VpnConfig c) async {
+    // TODO: wire native VpnService here
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("${c.name.isNotEmpty ? c.name : c.host ?? "config"} — tunnel engine coming soon")),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -105,8 +114,8 @@ class _MyConfigsScreenState extends State<MyConfigsScreen> {
                       SizedBox(height: 16),
                       Text("No configs yet.", style: TextStyle(color: Colors.grey, fontSize: 16)),
                       SizedBox(height: 8),
-                      Text("Tap Import tab to add configs.",
-                          style: TextStyle(color: Colors.grey)),
+                      Text("Tap Import tab to add locked configs.\nOr Owner tab to create locked configs.",
+                          style: TextStyle(color: Colors.grey), textAlign: TextAlign.center),
                     ],
                   ),
                 )
@@ -114,6 +123,7 @@ class _MyConfigsScreenState extends State<MyConfigsScreen> {
                   itemCount: _configs.length,
                   itemBuilder: (_, i) {
                     final c = _configs[i];
+                    final isLocked = c.raw.startsWith("locked:");
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       child: ListTile(
@@ -126,19 +136,21 @@ class _MyConfigsScreenState extends State<MyConfigsScreen> {
                           color: const Color(0xFF38E1D4),
                         ),
                         title: Text(c.name.isNotEmpty ? c.name : (c.host ?? "?")),
-                        subtitle: Text("${c.protocol.label} • ${c.host ?? "?"}"),
+                        subtitle: Text("${c.protocol.label} • ${c.host ?? "?"}${isLocked ? " 🔒 Locked" : ""}"),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
-                              icon: const Icon(Icons.copy, size: 20),
-                              onPressed: () {
-                                Clipboard.setData(ClipboardData(text: c.raw));
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text("Config copied")),
-                                );
-                              },
-                            ),
+                            // NO COPY for locked configs!
+                            if (!isLocked)
+                              IconButton(
+                                icon: const Icon(Icons.copy, size: 20),
+                                onPressed: () {
+                                  Clipboard.setData(ClipboardData(text: c.raw));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text("Config copied")),
+                                  );
+                                },
+                              ),
                             IconButton(
                               icon: const Icon(Icons.delete, size: 20, color: Colors.red),
                               onPressed: () async {
@@ -148,6 +160,7 @@ class _MyConfigsScreenState extends State<MyConfigsScreen> {
                             ),
                           ],
                         ),
+                        onTap: () => _connect(c),
                       ),
                     );
                   },
@@ -168,7 +181,7 @@ class ImportScreen extends StatefulWidget {
 class _ImportScreenState extends State<ImportScreen> {
   final _ctrl = TextEditingController();
   String? _result;
-  bool? _success; // null = no attempt yet
+  bool? _success;
 
   Future<void> _import() async {
     final blob = _ctrl.text.trim();
@@ -265,7 +278,7 @@ class _ImportScreenState extends State<ImportScreen> {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-//  OWNER — lock config locally, export locked blob for Telegram
+//  OWNER — full channel management + lock config + export file+text
 // ══════════════════════════════════════════════════════════════════════
 class OwnerScreen extends StatefulWidget {
   const OwnerScreen({super.key});
@@ -274,127 +287,233 @@ class OwnerScreen extends StatefulWidget {
 }
 
 class _OwnerScreenState extends State<OwnerScreen> {
-  final _ctrl = TextEditingController();
-  String? _lockedResult;
-  bool? _locked;
+  final _store = ConfigStore();
+  final _nameCtrl = TextEditingController();
+  final _adCtrl = TextEditingController();
+  final _tgCtrl = TextEditingController();
+  final _configCtrl = TextEditingController();
+  List<_Channel> _channels = [];
+  bool _loading = false;
 
-  Future<void> _lockConfig() async {
-    final raw = _ctrl.text.trim();
+  @override
+  void initState() {
+    super.initState();
+    _loadChannels();
+  }
+
+  Future<void> _loadChannels() async {
+    setState(() => _loading = true);
+    final store = ConfigStore();
+    final configs = await store.load();
+    // Group by "source" as pseudo-channels for now
+    final Map<String, List<VpnConfig>> bySource = {};
+    for (final c in configs) {
+      bySource.putIfAbsent(c.source, () => []).add(c);
+    }
+    setState(() {
+      _channels = bySource.entries.map((e) => _Channel(
+        name: e.key,
+        configs: e.value,
+        adText: "",
+        telegramUrl: "",
+      )).toList();
+      _loading = false;
+    });
+  }
+
+  Future<void> _createChannel() async {
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) return;
+    // For now just clear and reload (real channel support needs DB)
+    _nameCtrl.clear();
+    _loadChannels();
+  }
+
+  Future<void> _lockAndExport() async {
+    final raw = _configCtrl.text.trim();
     if (raw.isEmpty) return;
 
     try {
       final locked = await LockedConfigCodec.encode(raw);
-      setState(() {
-        _lockedResult = locked;
-        _locked = true;
-      });
+      // Save to local store as locked (prefix raw with "locked:")
+      final parsed = ConfigParser.parseMany(raw);
+      if (parsed.isEmpty) {
+        _snack("❌ Could not parse config");
+        return;
+      }
+      final lockedConfig = parsed.first.copyWith(raw: "locked:$locked");
+      final store = ConfigStore();
+      await store.add([lockedConfig]);
+
+      // Export both text and file
+      final fileName = "oversea_config_${DateTime.now().millisecondsSinceEpoch}.txt";
+      await Share.shareXFiles([
+        XFile.fromData(
+          Uint8List.fromList(locked.codeUnits),
+          name: fileName,
+          mimeType: "text/plain",
+        )
+      ], text: "Locked config for Oversea app:\n$locked");
+
+      _configCtrl.clear();
+      _snack("✅ Locked & exported! Share via Telegram.");
     } catch (e) {
-      setState(() {
-        _lockedResult = "❌ Lock failed: $e";
-        _locked = false;
-      });
+      _snack("❌ Lock failed: $e");
     }
+  }
+
+  void _snack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Owner — Lock Config")),
+      appBar: AppBar(
+        title: const Text("Owner Dashboard"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadChannels,
+          ),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Icon(Icons.admin_panel_settings, size: 48, color: Color(0xFF38E1D4)),
-            const SizedBox(height: 12),
-            const Text(
-              "Paste your raw config below to lock it.\n"
-              "The locked blob can be shared on Telegram.\n"
-              "Only Oversea app can decrypt it.",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _ctrl,
-              maxLines: 6,
-              decoration: const InputDecoration(
-                hintText: "vless://uuid@host:443?...#Name",
-                border: OutlineInputBorder(),
-                labelText: "Raw config",
-              ),
-            ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _lockConfig,
-              icon: const Icon(Icons.lock),
-              label: const Text("Lock Config"),
-            ),
-            if (_locked != null) ...[
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: (_locked == true)
-                      ? Colors.green.withAlpha(25)
-                      : Colors.red.withAlpha(25),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: (_locked == true) ? Colors.green : Colors.red,
-                  ),
-                ),
+            // Channel list
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      _locked == true ? "✅ Locked!" : _lockedResult!,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: (_locked == true) ? Colors.green : Colors.red,
-                      ),
+                    Row(
+                      children: [
+                        const Icon(Icons.list_alt, color: Color(0xFF38E1D4)),
+                        const SizedBox(width: 8),
+                        Text("My Channels", style: Theme.of(context).textTheme.titleLarge),
+                      ],
                     ),
-                    if (_locked == true) ...[
-                      const SizedBox(height: 8),
-                      const Text("Locked blob (copy & paste to Telegram):",
-                          style: TextStyle(color: Colors.grey)),
-                      const SizedBox(height: 4),
-                      SelectableText(
-                        _lockedResult!,
-                        style: const TextStyle(fontSize: 10, fontFamily: "monospace"),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          FilledButton.tonal(
-                            onPressed: () {
-                              Clipboard.setData(ClipboardData(text: _lockedResult!));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text("✅ Copied!")),
-                              );
-                            },
-                            child: const Text("📋 Copy"),
-                          ),
-                          const SizedBox(width: 12),
-                          FilledButton.tonal(
-                            onPressed: () {
-                              _ctrl.clear();
-                              setState(() {
-                                _lockedResult = null;
-                                _locked = null;
-                              });
-                            },
-                            child: const Text("🔄 New Config"),
-                          ),
-                        ],
-                      ),
-                    ],
+                    const SizedBox(height: 12),
+                    if (_channels.isEmpty)
+                      const Text("No channels yet. Create one below.", style: TextStyle(color: Colors.grey))
+                    else
+                      ..._channels.map((ch) => Card(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        child: ListTile(
+                          leading: const Icon(Icons.public),
+                          title: Text(ch.name),
+                          subtitle: Text("${ch.configs.length} configs"),
+                        ),
+                      )),
+                    const SizedBox(height: 12),
+                    // Create channel
+                    TextField(
+                      controller: _nameCtrl,
+                      decoration: const InputDecoration(labelText: "Channel name", border: OutlineInputBorder()),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton(onPressed: _createChannel, child: const Text("Create Channel")),
                   ],
                 ),
               ),
+            ),
+            const SizedBox(height: 16),
+            // Channel settings (ad, telegram)
+            if (_channels.isNotEmpty) ...[
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text("Channel Settings", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _adCtrl,
+                        decoration: const InputDecoration(
+                          labelText: "Ad text (shown before connect)",
+                          border: OutlineInputBorder(),
+                          hintText: "Join our channel @example",
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _tgCtrl,
+                        decoration: const InputDecoration(
+                          labelText: "Telegram URL",
+                          border: OutlineInputBorder(),
+                          hintText: "https://t.me/yourchannel",
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
+            const SizedBox(height: 16),
+            // Lock config
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.lock, color: Color(0xFF38E1D4)),
+                        const SizedBox(width: 8),
+                        Text("Lock New Config", style: Theme.of(context).textTheme.titleLarge),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      "Paste raw config (vless://, vmess://, ss://, etc.)\nOutput: locked blob (text + file) for Telegram.",
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _configCtrl,
+                      maxLines: 5,
+                      decoration: const InputDecoration(
+                        hintText: "vless://uuid@host:443?...#Name",
+                        border: OutlineInputBorder(),
+                        labelText: "Raw config",
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: _lockAndExport,
+                      icon: const Icon(Icons.lock),
+                      label: const Text("Lock & Export (Text + File)"),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+}
+
+// Simple channel model for UI
+class _Channel {
+  final String name;
+  final List<VpnConfig> configs;
+  final String adText;
+  final String telegramUrl;
+  _Channel({required this.name, required this.configs, required this.adText, required this.telegramUrl});
+}
+
+// Extension for copyWith on VpnConfig
+extension VpnConfigCopy on VpnConfig {
+  VpnConfig copyWith({String? raw}) => VpnConfig(
+    id: id, name: name, protocol: protocol, host: host, port: port,
+    raw: raw ?? this.raw, source: source, channelRef: channelRef,
+  );
 }
