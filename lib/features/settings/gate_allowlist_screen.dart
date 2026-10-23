@@ -22,8 +22,9 @@ class GateAllowListScreen extends ConsumerWidget {
           if (snap.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (lines.isEmpty)
+          if (lines.isEmpty) {
             return Center(child: Text(s.t("gate_allowlist_empty")));
+          }
           final all = lines.join("\n");
           return ListView(
             padding: const EdgeInsets.all(16),
