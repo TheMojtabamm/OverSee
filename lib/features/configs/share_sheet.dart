@@ -11,7 +11,9 @@ import "../../data/identity_store.dart";
 import "../../core/strings.dart";
 import "../../domain/ad_content.dart";
 import "../../domain/locked_config_codec.dart";
+import "../../domain/gate_token.dart";
 import "../../domain/vpn_config.dart";
+import "../../domain/xray_config_builder.dart";
 
 Future<void> showShareSheet(BuildContext context, VpnConfig c) {
   return showModalBottomSheet(
@@ -37,6 +39,7 @@ class _ShareSheetState extends State<_ShareSheet> {
   bool _lock = false;
   bool _showQr = false;
   bool _busy = false;
+  bool _gate = false;
   final _adCtrl = TextEditingController();
   final _tgCtrl = TextEditingController();
 
@@ -60,6 +63,10 @@ class _ShareSheetState extends State<_ShareSheet> {
           _snack(s.t("no_key"));
           return;
         }
+        if (_gate && !XrayConfigBuilder.supportsGate(c.raw)) {
+          _snack(s.t("gate_unsupported"));
+          return;
+        }
         final tgInput = _tgCtrl.text.trim();
         final tg = AdContent.channelUrl(tgInput);
         if (tgInput.isNotEmpty && tg == null) {
@@ -72,6 +79,7 @@ class _ShareSheetState extends State<_ShareSheet> {
           adText: AdContent.text(_adCtrl.text),
           telegramUrl: tg,
           signer: identity,
+          gated: _gate,
         );
         final name = "oversea_${DateTime.now().millisecondsSinceEpoch}.ovsea";
         // File only — no plaintext, and no blob in the message text.
@@ -121,6 +129,15 @@ class _ShareSheetState extends State<_ShareSheet> {
               secondary: const Icon(Icons.lock, color: accent),
             ),
             if (_lock) ...[
+              if (GateToken.available)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _gate,
+                  onChanged: (v) => setState(() => _gate = v ?? false),
+                  title: Text(s.t("gate_title")),
+                  subtitle: Text(s.t("gate_hint")),
+                  secondary: const Icon(Icons.shield_moon, color: accent),
+                ),
               const SizedBox(height: 8),
               TextField(
                 controller: _adCtrl,

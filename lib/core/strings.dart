@@ -98,6 +98,10 @@ class S {
       "test_all": "Test all",
       "ms": "ms",
       "failed": "failed",
+      "gate_title": "Server gate (anti-theft)",
+      "gate_hint":
+          "The server only accepts Oversea. A decoded link won't work in other apps. Needs the gate on your server and a WebSocket/HTTPUpgrade config.",
+      "gate_unsupported": "Gate needs a WebSocket or HTTPUpgrade transport.",
     },
     "fa": {
       "tab_configs": "کانفیگ‌ها",
@@ -179,6 +183,11 @@ class S {
       "test_all": "تست همه",
       "ms": "ms",
       "failed": "ناموفق",
+      "gate_title": "دروازه‌ی سرور (ضد سرقت)",
+      "gate_hint":
+          "سرور فقط Oversea را می‌پذیرد؛ لینک دیکدشده در برنامه‌های دیگر کار نمی‌کند. به نصب دروازه روی سرور و کانفیگ WebSocket/HTTPUpgrade نیاز دارد.",
+      "gate_unsupported":
+          "دروازه به انتقال WebSocket یا HTTPUpgrade نیاز دارد.",
     },
   };
 }

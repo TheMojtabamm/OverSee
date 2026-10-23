@@ -11,6 +11,8 @@ import "../../core/strings.dart";
 import "../../data/ad_service.dart";
 import "../../data/tunnel_service.dart";
 import "../../domain/ad_content.dart";
+import "../../domain/gate_token.dart";
+import "../../domain/tunnel_settings.dart";
 import "../../domain/vpn_config.dart";
 import "../../domain/xray_config_builder.dart";
 import "../../providers.dart";
@@ -90,7 +92,7 @@ Future<void> _connect(BuildContext context, WidgetRef ref, VpnConfig c) async {
   final settings = await ref.read(settingsProvider.future);
   final String json;
   try {
-    json = XrayConfigBuilder.build(c.raw, settings.toOptions());
+    json = XrayConfigBuilder.build(c.raw, _optionsFor(c, settings));
   } on UnsupportedConfigException {
     messenger.showSnackBar(SnackBar(content: Text(s.t("unsupported"))));
     return;
@@ -237,13 +239,30 @@ class _CreatorLine extends ConsumerWidget {
   }
 }
 
+TunnelOptions _optionsFor(VpnConfig c, TunnelSettings settings) {
+  final o = settings.toOptions();
+  if (!c.gated) return o;
+  if (!GateToken.available) {
+    throw const UnsupportedConfigException(
+        "This build cannot open gated configs");
+  }
+  return TunnelOptions(
+    dohServers: o.dohServers,
+    fragment: o.fragment,
+    ipv6: o.ipv6,
+    bypassLan: o.bypassLan,
+    mtu: o.mtu,
+    gateToken: GateToken.current(),
+  );
+}
+
 /// Measure one config's latency through its own outbound (does not need the VPN on).
 Future<void> testPing(WidgetRef ref, VpnConfig c) async {
   final ping = ref.read(pingProvider.notifier);
   ping.set(c.id, -2);
   try {
     final settings = await ref.read(settingsProvider.future);
-    final json = XrayConfigBuilder.build(c.raw, settings.toOptions());
+    final json = XrayConfigBuilder.build(c.raw, _optionsFor(c, settings));
     ping.set(c.id, await ref.read(tunnelServiceProvider).testDelay(json));
   } on UnsupportedConfigException {
     ping.set(c.id, -1);

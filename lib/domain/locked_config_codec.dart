@@ -119,6 +119,7 @@ class LockedConfigCodec {
     String? adText,
     String? telegramUrl,
     CreatorIdentity? signer,
+    bool gated = false,
   }) async {
     final ad = (adText != null && adText.isNotEmpty) ? adText : null;
     final tg =
@@ -128,10 +129,11 @@ class LockedConfigCodec {
       if (ad != null) "a": ad,
       if (tg != null) "t": tg,
       "g": keyGeneration,
+      if (gated) "w": 1,
       if (signer != null) ...{
         "p": base64.encode(signer.publicKey),
         "s": base64.encode(await signer
-            .sign(_signedBytes(plaintextConfig, ad, tg, keyGeneration))),
+            .sign(_signedBytes(plaintextConfig, ad, tg, keyGeneration, gated))),
       },
     });
 
@@ -202,6 +204,7 @@ class LockedConfigCodec {
     final a = j["a"] as String?;
     final t = j["t"] as String?;
     final g = (j["g"] as num?)?.toInt() ?? 0;
+    final w = j["w"] == 1;
 
     String? creator;
     final p = j["p"] as String?;
@@ -210,20 +213,24 @@ class LockedConfigCodec {
       try {
         final pub = base64.decode(p);
         final sig = base64.decode(sg);
-        if (await CreatorIdentity.verify(_signedBytes(c, a, t, g), sig, pub)) {
+        if (await CreatorIdentity.verify(
+            _signedBytes(c, a, t, g, w), sig, pub)) {
           creator = fingerprintOf(pub);
         }
       } catch (_) {
         // malformed signature material => treated as unsigned
       }
     }
-    return ConfigEnvelope(c, adText: a, telegramUrl: t, creator: creator);
+    return ConfigEnvelope(c,
+        adText: a, telegramUrl: t, creator: creator, gated: w);
   }
 
   /// Canonical bytes the signature covers. A JSON array keeps field boundaries
   /// unambiguous (no "ab"+"c" vs "a"+"bc" confusion).
-  static List<int> _signedBytes(String c, String? a, String? t, int g) =>
-      utf8.encode("ovsea-sig-v1\n${jsonEncode([c, a ?? "", t ?? "", g])}");
+  static List<int> _signedBytes(
+          String c, String? a, String? t, int g, bool w) =>
+      utf8.encode(
+          "ovsea-sig-v1\n${jsonEncode([c, a ?? "", t ?? "", g, w ? 1 : 0])}");
 
   /// Cheap check whether a string looks like one of our v3 locked blobs.
   static bool looksLocked(String s) {
@@ -254,6 +261,9 @@ class ConfigEnvelope {
   /// Fingerprint of the creator whose signature verified, or null when the file is
   /// unsigned or the signature does not match.
   final String? creator;
+
+  /// The config's server requires the Oversea gate token.
+  final bool gated;
   const ConfigEnvelope(this.config,
-      {this.adText, this.telegramUrl, this.creator});
+      {this.adText, this.telegramUrl, this.creator, this.gated = false});
 }

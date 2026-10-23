@@ -19,6 +19,10 @@ class TunnelOptions {
 
   final int mtu;
 
+  /// Token for a gated server (see GateToken). Sent as a header on WebSocket /
+  /// HTTPUpgrade connections; ignored for other transports.
+  final String? gateToken;
+
   const TunnelOptions({
     this.dohServers = const [
       "https://1.1.1.1/dns-query",
@@ -28,6 +32,7 @@ class TunnelOptions {
     this.ipv6 = false,
     this.bypassLan = true,
     this.mtu = 1500,
+    this.gateToken,
   });
 }
 
@@ -60,10 +65,15 @@ class XrayConfigBuilder {
   ];
 
   static String build(String raw,
+          [TunnelOptions opts = const TunnelOptions()]) =>
+      const JsonEncoder.withIndent("  ").convert(buildMap(raw, opts));
+
+  static Map<String, dynamic> buildMap(String raw,
       [TunnelOptions opts = const TunnelOptions()]) {
     final link = raw.trim();
     final proxy = _outbound(link);
     final host = _serverHost(proxy);
+    if (opts.gateToken != null) _applyGate(proxy, opts.gateToken!);
 
     final useTls = (proxy["streamSettings"] as Map?)?["security"] is String &&
         ((proxy["streamSettings"] as Map)["security"] != "none");
@@ -141,7 +151,38 @@ class XrayConfigBuilder {
         ],
       },
     };
-    return const JsonEncoder.withIndent("  ").convert(config);
+    return config;
+  }
+
+  // ---- gate ----------------------------------------------------------------
+
+  /// Transports where the gate can check one header per connection. XHTTP in
+  /// packet-up mode opens a request per packet, so it is not offered.
+  static const _gateNetworks = {"ws", "httpupgrade"};
+
+  /// True when [link] can sit behind the gate.
+  static bool supportsGate(String link) {
+    try {
+      final net = (_outbound(link.trim())["streamSettings"] as Map)["network"];
+      return _gateNetworks.contains(net);
+    } on UnsupportedConfigException {
+      return false;
+    }
+  }
+
+  static void _applyGate(Map<String, dynamic> proxy, String token) {
+    final ss = proxy["streamSettings"] as Map<String, dynamic>;
+    final net = ss["network"];
+    if (!_gateNetworks.contains(net)) {
+      throw UnsupportedConfigException(
+          "Gate needs a WebSocket or HTTPUpgrade transport (got '$net')");
+    }
+    final key = net == "ws" ? "wsSettings" : "httpupgradeSettings";
+    final settings = Map<String, dynamic>.of(
+        (ss[key] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{});
+    settings["headers"] = {"X-Oversea-Auth": token};
+    ss[key] = settings;
   }
 
   // ---- outbound ------------------------------------------------------------
