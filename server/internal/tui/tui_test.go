@@ -55,8 +55,8 @@ func typ(m Model, text string) Model {
 
 func TestEmptyStatusTellsWhatToDo(t *testing.T) {
 	v := newModel(t).View()
-	for _, want := range []string{"oversee", "Status", "Locks", "Keys", "Setup", "Logs", "Needs attention", "No app key"} {
-		if !strings.Contains(v, want) {
+	for _, want := range []string{"oversee", "Status", "Locks", "Keys", "Setup", "Logs", "Guide", "Needs attention", "No app key"} {
+		if !strings.Contains(strings.ToLower(v), strings.ToLower(want)) {
 			t.Errorf("missing %q in:\n%s", want, v)
 		}
 	}
@@ -215,7 +215,7 @@ func TestLeakThresholdEditValidates(t *testing.T) {
 func TestSetupCDNControls(t *testing.T) {
 	m := newModel(t)
 	m = send(m, "4")
-	if !strings.Contains(m.View(), "CDN fronting") || !strings.Contains(m.View(), "none (clients connect directly)") {
+	if !strings.Contains(strings.ToLower(m.View()), "cdn fronting") || !strings.Contains(m.View(), "none (clients connect directly)") {
 		t.Fatalf("default view:\n%s", m.View())
 	}
 	m = send(m, "o") // only-CDN without a CDN must be refused with a hint
@@ -233,5 +233,49 @@ func TestSetupCDNControls(t *testing.T) {
 	m = send(m, "c", "c", "c") // fastly, generic, back to none
 	if s := m.p.LoadSettings(); s.CDN != "" || s.OnlyProxy {
 		t.Fatalf("cycling back to none must also switch only-CDN off: %+v", s)
+	}
+}
+
+func TestGuideTabListsTheSetupsAndScrolls(t *testing.T) {
+	m := newModel(t)
+	m = send(m, "6")
+	if m.tab != tabGuide {
+		t.Fatalf("6 should open the guide, got tab %v", m.tab)
+	}
+	v := m.View()
+	for _, want := range []string{"How it works", "Direct + TLS", "CDN (Cloudflare)", "No TLS (plain)", "Own certificate", "Check & fix"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("guide topic list is missing %q:\n%s", want, v)
+		}
+	}
+	// pick the CDN topic: it must teach the real commands
+	m = send(m, "down", "down")
+	v = m.View()
+	for _, want := range []string{"Cloudflare", "oversee set cdn cloudflare", "oversee cdn-test", "Origin"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("CDN topic is missing %q:\n%s", want, v)
+		}
+	}
+	// the no-TLS topic names the plain mode command
+	m = send(m, "down", "down")
+	if !strings.Contains(m.View(), "oversee set plain :1001") {
+		t.Errorf("no-TLS topic should show 'oversee set plain':\n%s", m.View())
+	}
+}
+
+func TestGuideCommandsAreRealOnes(t *testing.T) {
+	// Every `oversee set <name>` the guide teaches must be a setting the CLI accepts.
+	valid := map[string]bool{"domain": true, "upstream": true, "plain": true, "leak-ips": true, "cdn": true, "only-proxy": true, "token-days": true, "cert": true, "key": true}
+	for _, g := range guideTopics {
+		for _, line := range strings.Split(g.body, "\n") {
+			i := strings.Index(line, "oversee set ")
+			if i < 0 || !strings.HasPrefix(line, "$ ") {
+				continue
+			}
+			name := strings.Fields(line[i+len("oversee set "):])[0]
+			if !valid[name] {
+				t.Errorf("guide topic %q teaches an unknown setting %q", g.title, name)
+			}
+		}
 	}
 }

@@ -24,28 +24,39 @@ const (
 	tabKeys
 	tabSetup
 	tabLogs
+	tabGuide
 )
 
-var tabNames = []string{"Status", "Locks", "Keys", "Setup", "Logs"}
+var tabNames = []string{"Status", "Locks", "Keys", "Setup", "Logs", "Guide"}
 
 var (
 	accent = lipgloss.Color("#38E1D4")
+	ink    = lipgloss.Color("#0b0f14")
+	bright = lipgloss.Color("#e8eef4")
 	dim    = lipgloss.Color("#7a8591")
 	bad    = lipgloss.Color("#ff6b6b")
 	good   = lipgloss.Color("#5fd38d")
 	warn   = lipgloss.Color("#f5c451")
+	panel  = lipgloss.Color("#16202b")
 
+	bannerStyle = lipgloss.NewStyle().Bold(true).Foreground(ink).Background(accent).Padding(0, 2)
 	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(accent)
-	tabOn       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#0b0f14")).Background(accent).Padding(0, 1)
-	tabOff      = lipgloss.NewStyle().Foreground(dim).Padding(0, 1)
+	subStyle    = lipgloss.NewStyle().Bold(true).Foreground(bright)
+	tabOn       = lipgloss.NewStyle().Bold(true).Foreground(ink).Background(accent).Padding(0, 2)
+	tabOff      = lipgloss.NewStyle().Bold(true).Foreground(dim).Padding(0, 2)
 	dimStyle    = lipgloss.NewStyle().Foreground(dim)
-	badStyle    = lipgloss.NewStyle().Foreground(bad)
-	goodStyle   = lipgloss.NewStyle().Foreground(good)
-	warnStyle   = lipgloss.NewStyle().Foreground(warn)
+	badStyle    = lipgloss.NewStyle().Bold(true).Foreground(bad)
+	goodStyle   = lipgloss.NewStyle().Bold(true).Foreground(good)
+	warnStyle   = lipgloss.NewStyle().Bold(true).Foreground(warn)
 	selStyle    = lipgloss.NewStyle().Bold(true).Foreground(accent)
-	boxStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(dim).Padding(0, 1)
+	boxStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(dim).Padding(1, 2)
 	helpStyle   = lipgloss.NewStyle().Foreground(dim)
-	headerStyle = lipgloss.NewStyle().Bold(true)
+	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(bright)
+	labelStyle  = lipgloss.NewStyle().Bold(true).Foreground(dim)
+	valueStyle  = lipgloss.NewStyle().Bold(true).Foreground(bright)
+	sectionBar  = lipgloss.NewStyle().Bold(true).Foreground(accent)
+	keyBadge    = lipgloss.NewStyle().Bold(true).Foreground(ink).Background(dim).Padding(0, 1)
+	cmdStyle    = lipgloss.NewStyle().Bold(true).Foreground(good).Background(panel).Padding(0, 1)
 )
 
 // mode is what the keyboard is currently doing inside a tab.
@@ -79,7 +90,8 @@ type Model struct {
 	logs     string
 	problems []oversee.Finding
 
-	sel      int // selection in Locks / Keys
+	sel      int // selection in Locks / Keys / Guide topics
+	scroll   int // Guide: first visible line
 	input    textinput.Model
 	msg      string
 	msgIsErr bool
@@ -128,6 +140,8 @@ func (m Model) listLen() int {
 		return len(m.locks)
 	case tabKeys:
 		return len(m.keys)
+	case tabGuide:
+		return len(guideTopics)
 	}
 	return 0
 }
@@ -157,21 +171,21 @@ func (m Model) updateBrowse(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "tab", "right", "l":
 		m.tab = (m.tab + 1) % tab(len(tabNames))
-		m.sel, m.msg = 0, ""
+		m.sel, m.scroll, m.msg = 0, 0, ""
 		if m.tab == tabLogs {
 			m.logs = oversee.Logs(30)
 		}
 		return m, nil
 	case "shift+tab", "left", "h":
 		m.tab = (m.tab + tab(len(tabNames)) - 1) % tab(len(tabNames))
-		m.sel, m.msg = 0, ""
+		m.sel, m.scroll, m.msg = 0, 0, ""
 		if m.tab == tabLogs {
 			m.logs = oversee.Logs(30)
 		}
 		return m, nil
-	case "1", "2", "3", "4", "5":
+	case "1", "2", "3", "4", "5", "6":
 		m.tab = tab(int(s[0] - '1'))
-		m.sel, m.msg = 0, ""
+		m.sel, m.scroll, m.msg = 0, 0, ""
 		if m.tab == tabLogs {
 			m.logs = oversee.Logs(30)
 		}
@@ -179,11 +193,23 @@ func (m Model) updateBrowse(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		if m.sel > 0 {
 			m.sel--
+			m.scroll = 0
 		}
 		return m, nil
 	case "down", "j":
 		if m.sel < m.listLen()-1 {
 			m.sel++
+			m.scroll = 0
+		}
+		return m, nil
+	case " ", "pgdown", "f":
+		if m.tab == tabGuide {
+			m.scroll += max(3, m.guideHeight()-2)
+		}
+		return m, nil
+	case "pgup", "b":
+		if m.tab == tabGuide {
+			m.scroll = max(0, m.scroll-max(3, m.guideHeight()-2))
 		}
 		return m, nil
 	case "r":
@@ -394,9 +420,57 @@ func (m Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // ---- view -----------------------------------------------------------------------
 
+// contentW is the width of the working area: the terminal width, within sane limits.
+func (m Model) contentW() int {
+	w := m.w
+	if w <= 0 {
+		w = 100
+	}
+	w -= 4
+	if w > 118 {
+		w = 118
+	}
+	if w < 60 {
+		w = 60
+	}
+	return w
+}
+
+// gap is the blank line(s) between rows: roomy when the terminal is tall enough.
+func (m Model) gap() string {
+	if m.h > 0 && m.h < 36 {
+		return "\n"
+	}
+	return "\n\n"
+}
+
+func (m Model) box() lipgloss.Style { return boxStyle.Width(m.contentW() - 2) }
+
+func (m Model) sec(title string) string {
+	return sectionBar.Render("▌ " + strings.ToUpper(title))
+}
+
+func (m Model) banner() string {
+	left := bannerStyle.Render("◆ OVERSEE") + "  " + subStyle.Render("oversee") + dimStyle.Render(" · gate manager")
+	chip := dimStyle.Render("systemd n/a")
+	if m.svc.Available {
+		switch m.svc.Active {
+		case "active":
+			chip = goodStyle.Render("● RUNNING")
+		case "inactive", "failed":
+			chip = badStyle.Render("● " + strings.ToUpper(m.svc.Active))
+		default:
+			chip = warnStyle.Render("● " + strings.ToUpper(m.svc.Active))
+		}
+	}
+	pad := m.contentW() - lipgloss.Width(left) - lipgloss.Width(chip)
+	return left + strings.Repeat(" ", max(2, pad)) + chip
+}
+
 func (m Model) View() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("◆ oversee") + dimStyle.Render("  gate manager") + "\n\n")
+	cw := m.contentW()
+	b.WriteString("\n " + m.banner() + "\n\n")
 
 	var tabs []string
 	for i, n := range tabNames {
@@ -407,57 +481,91 @@ func (m Model) View() string {
 			tabs = append(tabs, tabOff.Render(label))
 		}
 	}
-	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, tabs...) + "\n\n")
+	b.WriteString(" " + lipgloss.JoinHorizontal(lipgloss.Top, tabs...) + "\n")
+	b.WriteString(" " + dimStyle.Render(strings.Repeat("━", cw)) + "\n\n")
 
+	var body string
 	switch m.tab {
 	case tabStatus:
-		b.WriteString(m.viewStatus())
+		body = m.viewStatus()
 	case tabLocks:
-		b.WriteString(m.viewLocks())
+		body = m.viewLocks()
 	case tabKeys:
-		b.WriteString(m.viewKeys())
+		body = m.viewKeys()
 	case tabSetup:
-		b.WriteString(m.viewSetup())
+		body = m.viewSetup()
 	case tabLogs:
-		b.WriteString(boxStyle.Render(orDash(m.logs)))
+		body = m.sec("Gate logs") + "\n" + m.box().Render(orDashPlain(m.logs))
+	case tabGuide:
+		body = m.viewGuide()
 	}
+	b.WriteString(indent(body, " "))
 
 	b.WriteString("\n")
 	switch m.mode {
 	case modeAddLock, modeAddKey, modeEditDomain, modeEditUpstream, modeEditLeak:
-		b.WriteString("\n" + m.input.View() + "\n" + helpStyle.Render("enter save · esc cancel") + "\n")
+		b.WriteString("\n " + m.input.View() + "\n " + helpStyle.Render("enter save · esc cancel") + "\n")
 	case modeConfirmRevoke:
 		if m.sel < len(m.locks) {
 			l := m.locks[m.sel]
-			b.WriteString("\n" + warnStyle.Render(fmt.Sprintf("Revoke %s (%s)? All copies of this lock stop working. [y/N]", l.CodeID, orDash(l.Note))) + "\n")
+			b.WriteString("\n " + warnStyle.Render(fmt.Sprintf("Revoke %s (%s)? All copies of this lock stop working. [y/N]", l.CodeID, orDash(l.Note))) + "\n")
 		}
 	case modeConfirmKeyDelete:
-		b.WriteString("\n" + warnStyle.Render("Remove this app key? Apps built with it will be refused. [y/N]") + "\n")
+		b.WriteString("\n " + warnStyle.Render("Remove this app key? Apps built with it will be refused. [y/N]") + "\n")
 	}
 	if m.msg != "" {
 		st := goodStyle
 		if m.msgIsErr {
 			st = badStyle
 		}
-		b.WriteString("\n" + st.Render(m.msg) + "\n")
+		b.WriteString("\n " + st.Render(m.msg) + "\n")
 	}
-	b.WriteString("\n" + helpStyle.Render(m.help()) + "\n")
+	b.WriteString("\n " + m.helpBar() + "\n")
 	return b.String()
 }
 
-func (m Model) help() string {
-	base := "tab/←→ switch · 1-5 jump · r refresh · q quit"
+func indent(s, pad string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = pad + l
+	}
+	return strings.Join(lines, "\n")
+}
+
+// helpPairs are the keys that work right now: {key, what it does}.
+func (m Model) helpPairs() [][2]string {
+	base := [][2]string{{"tab", "next"}, {"1-6", "jump"}, {"r", "refresh"}, {"q", "quit"}}
+	var own [][2]string
 	switch m.tab {
 	case tabStatus:
-		return "s start · x stop · R restart · e enable · D disable · " + base
+		own = [][2]string{{"s", "start"}, {"x", "stop"}, {"R", "restart"}, {"e", "enable"}, {"D", "disable"}}
 	case tabLocks:
-		return "↑↓ select · a add · d revoke · " + base
+		own = [][2]string{{"↑↓", "select"}, {"a", "add"}, {"d", "revoke"}}
 	case tabKeys:
-		return "↑↓ select · n new · g generate · d remove · " + base
+		own = [][2]string{{"↑↓", "select"}, {"n", "new"}, {"g", "generate"}, {"d", "remove"}}
 	case tabSetup:
-		return "e domain · u upstream · c CDN · o only-CDN · t leak alert · g example · " + base
+		own = [][2]string{{"e", "domain"}, {"u", "upstream"}, {"c", "CDN"}, {"o", "only-CDN"}, {"t", "leak alert"}, {"g", "example"}}
+	case tabGuide:
+		own = [][2]string{{"↑↓", "topic"}, {"space", "scroll down"}, {"b", "scroll up"}}
 	}
-	return base
+	return append(own, base...)
+}
+
+func (m Model) helpBar() string {
+	var parts []string
+	for _, p := range m.helpPairs() {
+		parts = append(parts, keyBadge.Render(p[0])+" "+helpStyle.Render(p[1]))
+	}
+	return strings.Join(parts, "  ")
+}
+
+// help is the same list as plain text.
+func (m Model) help() string {
+	var parts []string
+	for _, p := range m.helpPairs() {
+		parts = append(parts, p[0]+" "+p[1])
+	}
+	return strings.Join(parts, " · ")
 }
 
 func (m Model) viewStatus() string {
@@ -472,14 +580,14 @@ func (m Model) viewStatus() string {
 		state = dimStyle.Render("systemd not available")
 	}
 	rows := []string{
-		row("Gate service", state+dimStyle.Render("  (boot: "+m.svc.Enabled+")")),
+		row("Gate service", state+dimStyle.Render("   starts at boot: "+m.svc.Enabled)),
 		row("Domain", orDash(m.settings.Domain)),
-		row("Upstream (Xray)", m.settings.Upstream),
-		row("Locks allowed", fmt.Sprint(len(m.locks))),
-		row("App keys", fmt.Sprint(len(m.keys))),
-		row("Config dir", m.p.Dir),
+		row("Upstream (Xray)", val(m.settings.Upstream)),
+		row("Locks allowed", val(fmt.Sprint(len(m.locks)))),
+		row("App keys", val(fmt.Sprint(len(m.keys)))),
+		row("Config dir", dimStyle.Render(m.p.Dir)),
 	}
-	out := boxStyle.Render(strings.Join(rows, "\n"))
+	out := m.sec("Overview") + "\n" + m.box().Render(strings.Join(rows, m.gap()))
 	if len(m.problems) > 0 {
 		var lines []string
 		for _, f := range m.problems {
@@ -492,23 +600,24 @@ func (m Model) viewStatus() string {
 				lines = append(lines, dimStyle.Render("    → "+f.Fix))
 			}
 		}
-		out += "\n\n" + headerStyle.Render("Needs attention") + "\n" + strings.Join(lines, "\n")
+		out += "\n\n" + m.sec("Needs attention") + "\n" + strings.Join(lines, "\n")
 	} else {
-		out += "\n\n" + goodStyle.Render("✓ setup looks right") + dimStyle.Render("  (oversee doctor has the details)")
+		out += "\n\n" + goodStyle.Render("✓ setup looks right") + dimStyle.Render("   (oversee doctor has the details)")
 	}
+	out += "\n" + dimStyle.Render("New here? Open the ") + selStyle.Render("6 Guide") + dimStyle.Render(" tab: CDN, TLS, no-TLS and certificates, step by step.")
 	return out
 }
 
 func (m Model) viewLocks() string {
 	if len(m.locks) == 0 {
-		return dimStyle.Render("No locks yet. In the app: Share → Lock → Server gate, then press ") + selStyle.Render("a") + dimStyle.Render(" and paste the line it shows.")
+		return m.sec("Locks") + "\n" + dimStyle.Render("No locks yet. In the app: Share → Lock → Server gate, then press ") + selStyle.Render("a") + dimStyle.Render(" and paste the line it shows.")
 	}
 	var lines []string
-	lines = append(lines, dimStyle.Render(fmt.Sprintf("  %-18s %-21s %7s %6s  %s", "LOCK ID", "CREATOR", "CONNS", "IPs", "NOTE")))
+	lines = append(lines, labelStyle.Render(fmt.Sprintf("  %-18s %-21s %7s %6s  %s", "LOCK ID", "CREATOR", "CONNS", "IPs", "NOTE")))
 	leaks := 0
 	for i, l := range m.locks {
 		cur := "  "
-		st := lipgloss.NewStyle()
+		st := valueStyle
 		if i == m.sel {
 			cur, st = "▸ ", selStyle
 		}
@@ -525,7 +634,7 @@ func (m Model) viewLocks() string {
 		}
 		lines = append(lines, cur+row)
 	}
-	out := boxStyle.Render(strings.Join(lines, "\n"))
+	out := m.sec("Locks") + "\n" + m.box().Render(strings.Join(lines, "\n"))
 	switch {
 	case m.statsAge < 0:
 		out += "\n" + dimStyle.Render("no live stats yet (the gate writes them every few seconds while running)")
@@ -557,21 +666,21 @@ func fmtRejects(r map[string]int) string {
 func (m Model) viewKeys() string {
 	intro := dimStyle.Render("The gate accepts tokens made by these Oversea app keys. Newest first; keep the previous one until old builds age out.") + "\n\n"
 	if len(m.keys) == 0 {
-		return intro + warnStyle.Render("No key yet — every connection is refused. Press ") + selStyle.Render("n") + warnStyle.Render(" to add the GATE_KEY your app was built with, or ") + selStyle.Render("g") + warnStyle.Render(" to generate one.")
+		return m.sec("App keys") + "\n" + intro + warnStyle.Render("No key yet — every connection is refused. Press ") + selStyle.Render("n") + warnStyle.Render(" to add the GATE_KEY your app was built with, or ") + selStyle.Render("g") + warnStyle.Render(" to generate one.")
 	}
 	var lines []string
 	for i, k := range m.keys {
-		cur, st := "  ", lipgloss.NewStyle()
+		cur, st := "  ", valueStyle
 		if i == m.sel {
 			cur, st = "▸ ", selStyle
 		}
-		tag := dimStyle.Render("  previous")
+		tag := dimStyle.Render("   previous")
 		if i == 0 {
-			tag = goodStyle.Render("  current")
+			tag = goodStyle.Render("   current")
 		}
 		lines = append(lines, cur+st.Render(oversee.MaskKey(k))+tag)
 	}
-	return intro + boxStyle.Render(strings.Join(lines, "\n"))
+	return m.sec("App keys") + "\n" + intro + m.box().Render(strings.Join(lines, m.gap()))
 }
 
 func (m Model) viewSetup() string {
@@ -580,17 +689,20 @@ func (m Model) viewSetup() string {
 	if i := strings.LastIndex(s.Upstream, ":"); i >= 0 {
 		fmt.Sscanf(s.Upstream[i+1:], "%d", &port)
 	}
+	edit := func(k string) string { return "   " + keyBadge.Render(k) }
 	var b strings.Builder
-	b.WriteString(boxStyle.Render(strings.Join([]string{
-		row("Domain", orDash(s.Domain)+dimStyle.Render("   e to edit")),
-		row("Upstream", s.Upstream+dimStyle.Render("   u to edit")),
-		row("Leak alert", leakText(s.LeakIPs)+dimStyle.Render("   t to edit")),
-		row("CDN fronting", cdnText(s, m.p.ProxyInfo())+dimStyle.Render("   c to change")),
-	}, "\n")))
-	b.WriteString("\n\n" + headerStyle.Render("Xray inbound to put behind the gate") + dimStyle.Render("  (listens on loopback; the gate does TLS)") + "\n")
-	b.WriteString(boxStyle.Render(oversee.XrayInbound(port, m.exPath, m.exUUID)))
-	b.WriteString("\n\n" + headerStyle.Render("Matching client link") + dimStyle.Render("  (paste into the app, then lock it with “Server gate”)") + "\n")
-	b.WriteString(boxStyle.Render(oversee.ClientLink(s.Domain, m.exPath, m.exUUID, "my-server")))
+	b.WriteString(m.sec("Gate settings") + "\n")
+	b.WriteString(m.box().Render(strings.Join([]string{
+		row("Domain", orDash(s.Domain)+edit("e")),
+		row("Upstream", val(s.Upstream)+edit("u")),
+		row("Leak alert", val(leakText(s.LeakIPs))+edit("t")),
+		row("CDN fronting", val(cdnText(s, m.p.ProxyInfo()))+edit("c")),
+	}, m.gap())))
+	b.WriteString("\n\n" + m.sec("Xray inbound to put behind the gate") + dimStyle.Render("   loopback only; the gate does TLS") + "\n")
+	b.WriteString(m.box().Render(oversee.XrayInbound(port, m.exPath, m.exUUID)))
+	b.WriteString("\n\n" + m.sec("Matching client link") + dimStyle.Render("   paste into the app, then lock it with “Server gate”") + "\n")
+	b.WriteString(m.box().Render(oversee.ClientLink(s.Domain, m.exPath, m.exUUID, "my-server")))
+	b.WriteString("\n" + dimStyle.Render("Using a CDN, a certificate file or no TLS at all? Read ") + selStyle.Render("6 Guide") + dimStyle.Render("."))
 	return b.String()
 }
 
@@ -616,7 +728,7 @@ func cdnText(s oversee.Settings, i oversee.ProxyListInfo) string {
 	if i.Age >= 0 {
 		list = fmt.Sprintf("%d ranges, %s old", i.Count, i.Age.Round(time.Minute))
 	}
-	return fmt.Sprintf("%s · %s · only-CDN %s   o to toggle", s.CDN, list, onOff(s.OnlyProxy))
+	return fmt.Sprintf("%s · %s · only-CDN %s  (o toggles)", s.CDN, list, onOff(s.OnlyProxy))
 }
 
 func leakText(n int) string {
@@ -627,10 +739,20 @@ func leakText(n int) string {
 }
 
 func row(k, v string) string {
-	return fmt.Sprintf("%s  %s", headerStyle.Render(fmt.Sprintf("%-16s", k)), v)
+	return labelStyle.Render(fmt.Sprintf("%-18s", strings.ToUpper(k))) + v
 }
 
+// val is a bold, bright value.
+func val(s string) string { return valueStyle.Render(s) }
+
 func orDash(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return dimStyle.Render("—")
+	}
+	return valueStyle.Render(s)
+}
+
+func orDashPlain(s string) string {
 	if strings.TrimSpace(s) == "" {
 		return dimStyle.Render("—")
 	}
