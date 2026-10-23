@@ -1,7 +1,11 @@
 // Command gate fronts an Xray WebSocket/HTTPUpgrade inbound and admits only
 // connections carrying a valid Oversea client token. See internal/gate.
 //
-//	GATE_KEYS=<key>[,<previous key>] gate -domain vpn.example.com -upstream 127.0.0.1:10000
+//	GATE_KEYS=<app key>[,<previous app key>] \
+//	  gate -domain vpn.example.com -upstream 127.0.0.1:10000 -allow allow.txt
+//
+// allow.txt has one line per lock you created in the app: `<code> <creator fingerprint>`.
+// Delete a line to revoke that lock (and every copy of it); edits apply within seconds.
 //
 // Xray listens on 127.0.0.1:10000 with security "none"; this process owns :443
 // and the TLS certificate (Let's Encrypt, automatic). Clients use TLS to the domain.
@@ -27,6 +31,7 @@ func main() {
 	upstream := flag.String("upstream", "127.0.0.1:10000", "Xray inbound host:port (plain HTTP)")
 	plain := flag.String("plain", "", "listen address for plain HTTP, for testing or when TLS is terminated elsewhere (e.g. :8080)")
 	cacheDir := flag.String("certs", "certs", "directory for the certificate cache")
+	allowPath := flag.String("allow", "allow.txt", "allow-list file: `<code> <creator fingerprint>` per line")
 	flag.Parse()
 
 	var keys [][]byte
@@ -46,7 +51,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("bad -upstream: %v", err)
 	}
-	h := gate.New(up, keys)
+	al, err := gate.LoadAllowList(*allowPath)
+	if err != nil {
+		log.Fatalf("allow-list: %v", err)
+	}
+	al.Watch(3*time.Second, func(err error) { log.Printf("allow-list not reloaded (keeping previous): %v", err) })
+	log.Printf("allow-list: %d lock(s)", len(al.Get()))
+	h := gate.New(up, al.Get, keys)
 
 	if *plain != "" {
 		log.Printf("plain HTTP gate on %s -> %s", *plain, *upstream)

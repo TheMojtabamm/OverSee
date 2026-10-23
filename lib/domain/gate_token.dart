@@ -1,29 +1,55 @@
 import "dart:convert";
+import "dart:math";
 
 import "package:crypto/crypto.dart";
 
-/// Client token for the Oversea gate (server/internal/gate). A gated server
-/// refuses any connection without it, so a decoded vless:// link is useless in
-/// other apps. Same construction as the Go side; the shared test vector keeps
-/// them identical.
+/// Client token for the Oversea gate (server/internal/gate).
+///
+///   token = <codeId>.<day>.hex(HMAC(appKey, "ovsea-gate-v2|"+code+"|"+creatorFp+"|"+day))
+///
+/// One MAC covers all three facts the server checks: this is the Oversea app
+/// (appKey), the lock's secret code is on the server's allow-list, and the file
+/// was signed by the creator that owns that code (creatorFp comes from the
+/// *verified* signature of the file being used). Same construction as the Go side;
+/// the shared test vector keeps them identical.
 class GateToken {
   GateToken._();
 
   /// Injected at build time (`--dart-define=GATE_KEY=...`, a CI secret). Empty in a
-  /// plain checkout, in which case gated configs cannot be connected or created.
-  static const String _key = String.fromEnvironment("GATE_KEY");
+  /// plain checkout, in which case gated configs cannot be created or connected.
+  static const String _appKey = String.fromEnvironment("GATE_KEY");
 
-  static bool get available => _key.isNotEmpty;
+  static bool get available => _appKey.isNotEmpty;
 
   /// Header name the gate reads.
   static const header = "X-Oversea-Auth";
 
-  static String current({DateTime? now}) => forKey(_key, now ?? DateTime.now());
-
-  static String forKey(String key, DateTime now) {
-    final day = now.toUtc().millisecondsSinceEpoch ~/ 86400000;
-    final mac = Hmac(sha256, utf8.encode(key))
-        .convert(utf8.encode("ovsea-gate-v1|$day"));
-    return "$day.${mac.toString()}";
+  /// A fresh random per-lock code: 128 bits, 32 hex chars.
+  static String newCode() {
+    final r = Random.secure();
+    return List.generate(
+        16, (_) => r.nextInt(256).toRadixString(16).padLeft(2, "0")).join();
   }
+
+  static String codeId(String code) => sha256
+      .convert(utf8.encode("ovsea-code-id|$code"))
+      .toString()
+      .substring(0, 16);
+
+  /// Token for a gated lock using this build's app key.
+  static String current(String code, String creatorFp, {DateTime? now}) =>
+      forKey(_appKey, code, creatorFp, now ?? DateTime.now());
+
+  static String forKey(
+      String appKey, String code, String creatorFp, DateTime now) {
+    final day = now.toUtc().millisecondsSinceEpoch ~/ 86400000;
+    final mac = Hmac(sha256, utf8.encode(appKey))
+        .convert(utf8.encode("ovsea-gate-v2|$code|$creatorFp|$day"));
+    return "${codeId(code)}.$day.$mac";
+  }
+
+  /// The line the creator adds to the server's allow-list.
+  static String allowListLine(String code, String creatorFp,
+          {String note = ""}) =>
+      "$code $creatorFp${note.isEmpty ? "" : " $note"}";
 }

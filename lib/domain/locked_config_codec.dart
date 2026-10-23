@@ -119,7 +119,7 @@ class LockedConfigCodec {
     String? adText,
     String? telegramUrl,
     CreatorIdentity? signer,
-    bool gated = false,
+    String? gateCode,
   }) async {
     final ad = (adText != null && adText.isNotEmpty) ? adText : null;
     final tg =
@@ -129,11 +129,11 @@ class LockedConfigCodec {
       if (ad != null) "a": ad,
       if (tg != null) "t": tg,
       "g": keyGeneration,
-      if (gated) "w": 1,
+      if (gateCode != null) "k": gateCode,
       if (signer != null) ...{
         "p": base64.encode(signer.publicKey),
-        "s": base64.encode(await signer
-            .sign(_signedBytes(plaintextConfig, ad, tg, keyGeneration, gated))),
+        "s": base64.encode(await signer.sign(
+            _signedBytes(plaintextConfig, ad, tg, keyGeneration, gateCode))),
       },
     });
 
@@ -204,7 +204,7 @@ class LockedConfigCodec {
     final a = j["a"] as String?;
     final t = j["t"] as String?;
     final g = (j["g"] as num?)?.toInt() ?? 0;
-    final w = j["w"] == 1;
+    final k = j["k"] as String?;
 
     String? creator;
     final p = j["p"] as String?;
@@ -214,7 +214,7 @@ class LockedConfigCodec {
         final pub = base64.decode(p);
         final sig = base64.decode(sg);
         if (await CreatorIdentity.verify(
-            _signedBytes(c, a, t, g, w), sig, pub)) {
+            _signedBytes(c, a, t, g, k), sig, pub)) {
           creator = fingerprintOf(pub);
         }
       } catch (_) {
@@ -222,15 +222,15 @@ class LockedConfigCodec {
       }
     }
     return ConfigEnvelope(c,
-        adText: a, telegramUrl: t, creator: creator, gated: w);
+        adText: a, telegramUrl: t, creator: creator, gateCode: k);
   }
 
   /// Canonical bytes the signature covers. A JSON array keeps field boundaries
   /// unambiguous (no "ab"+"c" vs "a"+"bc" confusion).
   static List<int> _signedBytes(
-          String c, String? a, String? t, int g, bool w) =>
+          String c, String? a, String? t, int g, String? k) =>
       utf8.encode(
-          "ovsea-sig-v1\n${jsonEncode([c, a ?? "", t ?? "", g, w ? 1 : 0])}");
+          "ovsea-sig-v1\n${jsonEncode([c, a ?? "", t ?? "", g, k ?? ""])}");
 
   /// Cheap check whether a string looks like one of our v3 locked blobs.
   static bool looksLocked(String s) {
@@ -262,8 +262,8 @@ class ConfigEnvelope {
   /// unsigned or the signature does not match.
   final String? creator;
 
-  /// The config's server requires the Oversea gate token.
-  final bool gated;
+  /// Secret per-lock code for a gated server (null = server is not gated).
+  final String? gateCode;
   const ConfigEnvelope(this.config,
-      {this.adText, this.telegramUrl, this.creator, this.gated = false});
+      {this.adText, this.telegramUrl, this.creator, this.gateCode});
 }

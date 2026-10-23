@@ -242,9 +242,13 @@ class _CreatorLine extends ConsumerWidget {
 TunnelOptions _optionsFor(VpnConfig c, TunnelSettings settings) {
   final o = settings.toOptions();
   if (!c.gated) return o;
-  if (!GateToken.available) {
+  // The creator fingerprint is part of the token, so a gated file must carry a
+  // *verified* signature; an unsigned or re-signed file cannot produce a token the
+  // owner's server will accept.
+  final fp = c.creator;
+  if (!GateToken.available || fp == null) {
     throw const UnsupportedConfigException(
-        "This build cannot open gated configs");
+        "This gated config cannot be opened here");
   }
   return TunnelOptions(
     dohServers: o.dohServers,
@@ -252,7 +256,7 @@ TunnelOptions _optionsFor(VpnConfig c, TunnelSettings settings) {
     ipv6: o.ipv6,
     bypassLan: o.bypassLan,
     mtu: o.mtu,
-    gateToken: GateToken.current(),
+    gateToken: GateToken.current(c.gateCode!, fp),
   );
 }
 

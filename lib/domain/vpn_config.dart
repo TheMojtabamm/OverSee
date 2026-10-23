@@ -75,8 +75,10 @@ class VpnConfig {
   /// Verified creator fingerprint from a signed locked file (null = unsigned).
   final String? creator;
 
-  /// The server is behind the Oversea gate and needs the client token.
-  final bool gated;
+  /// Secret per-lock code when the server is behind the Oversea gate.
+  final String? gateCode;
+
+  bool get gated => gateCode != null;
 
   const VpnConfig({
     required this.id,
@@ -91,7 +93,7 @@ class VpnConfig {
     this.telegramUrl,
     this.locked = false,
     this.creator,
-    this.gated = false,
+    this.gateCode,
   });
 
   Map<String, dynamic> toJson() => {
@@ -107,7 +109,7 @@ class VpnConfig {
         "telegramUrl": telegramUrl,
         "locked": locked,
         "creator": creator,
-        "gated": gated,
+        "gateCode": gateCode,
       };
 
   factory VpnConfig.fromJson(Map<String, dynamic> j) => VpnConfig(
@@ -126,7 +128,7 @@ class VpnConfig {
         telegramUrl: j["telegramUrl"] as String?,
         locked: (j["locked"] as bool?) ?? false,
         creator: j["creator"] as String?,
-        gated: (j["gated"] as bool?) ?? false,
+        gateCode: j["gateCode"] as String?,
       );
 
   VpnConfig copyWith({
@@ -142,7 +144,7 @@ class VpnConfig {
     String? telegramUrl,
     bool? locked,
     String? creator,
-    bool? gated,
+    String? gateCode,
     bool clearHost = false,
   }) =>
       VpnConfig(
@@ -158,6 +160,6 @@ class VpnConfig {
         telegramUrl: telegramUrl ?? this.telegramUrl,
         locked: locked ?? this.locked,
         creator: creator ?? this.creator,
-        gated: gated ?? this.gated,
+        gateCode: gateCode ?? this.gateCode,
       );
 }

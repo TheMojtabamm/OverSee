@@ -10,6 +10,25 @@ class IdentityStore {
   final Vault _vault;
   IdentityStore({Vault? vault}) : _vault = vault ?? SecureVault();
 
+  static const _entries = "gate_entries_v1";
+
+  /// Allow-list lines for locks this device created (so the owner can copy them again).
+  Future<List<String>> gateLines() async {
+    final raw = await _vault.read(_entries);
+    if (raw == null) return [];
+    try {
+      return (jsonDecode(raw) as List).whereType<String>().toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> addGateLine(String line) async {
+    final cur = await gateLines();
+    if (!cur.contains(line)) cur.add(line);
+    await _vault.write(_entries, jsonEncode(cur));
+  }
+
   Future<CreatorIdentity> load() async {
     final stored = await _vault.read(_key);
     if (stored != null) {

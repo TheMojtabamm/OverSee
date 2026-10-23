@@ -9,6 +9,7 @@ import "../../data/ad_service.dart";
 import "../../domain/tunnel_settings.dart";
 import "../../providers.dart";
 import "app_picker_screen.dart";
+import "gate_allowlist_screen.dart";
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -117,6 +118,16 @@ class SettingsScreen extends ConsumerWidget {
                       ScaffoldMessenger.of(context)
                           .showSnackBar(SnackBar(content: Text(s.t("copied"))));
                     },
+            ),
+          ),
+          ListTile(
+            title: Text(s.t("gate_allowlist")),
+            subtitle: Text(s.t("gate_allowlist_hint")),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                  builder: (_) => const GateAllowListScreen()),
             ),
           ),
           const Divider(),

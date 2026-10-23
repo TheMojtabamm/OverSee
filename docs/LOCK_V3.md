@@ -77,6 +77,9 @@ recognition (fingerprint + "trusted"), not prevention. Preventing it would need
 either owner-only locking (a separate owner app/CLI holding a key the public app
 never contains) or a server that vouches for creators.
 
+## Gate (implemented)
+See `GATE.md`: a per-lock random code + creator fingerprint + app key folded into a daily token the owner's server verifies, so decoded links don't work elsewhere and re-branded copies are refused.
+
 ## Planned next (not yet implemented)
 * Move the open/derive path into native code (C++/JNI) with per-build generated
   constants.

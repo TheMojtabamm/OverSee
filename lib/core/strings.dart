@@ -102,6 +102,12 @@ class S {
       "gate_hint":
           "The server only accepts Oversea. A decoded link won't work in other apps. Needs the gate on your server and a WebSocket/HTTPUpgrade config.",
       "gate_unsupported": "Gate needs a WebSocket or HTTPUpgrade transport.",
+      "gate_line_title": "Add this to your server",
+      "gate_line_body":
+          "Put this line in the gate's allow-list file (allow.txt). Delete the line later to revoke this lock and every copy of it.",
+      "gate_allowlist": "Gate allow-list",
+      "gate_allowlist_hint": "Lines for the locks you created",
+      "gate_allowlist_empty": "You have not created any gated locks yet.",
     },
     "fa": {
       "tab_configs": "کانفیگ‌ها",
@@ -188,6 +194,12 @@ class S {
           "سرور فقط Oversea را می‌پذیرد؛ لینک دیکدشده در برنامه‌های دیگر کار نمی‌کند. به نصب دروازه روی سرور و کانفیگ WebSocket/HTTPUpgrade نیاز دارد.",
       "gate_unsupported":
           "دروازه به انتقال WebSocket یا HTTPUpgrade نیاز دارد.",
+      "gate_line_title": "این را به سرور اضافه کنید",
+      "gate_line_body":
+          "این خط را در فایل لیست‌سفید دروازه (allow.txt) بگذارید. بعداً با حذف همین خط، این قفل و همه‌ی کپی‌هایش از کار می‌افتند.",
+      "gate_allowlist": "لیست‌سفید دروازه",
+      "gate_allowlist_hint": "خط‌های قفل‌هایی که ساخته‌اید",
+      "gate_allowlist_empty": "هنوز قفل دروازه‌دار نساخته‌اید.",
     },
   };
 }

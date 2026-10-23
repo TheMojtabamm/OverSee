@@ -73,14 +73,26 @@ class _ShareSheetState extends State<_ShareSheet> {
           _snack(s.t("invalid_tg"));
           return;
         }
-        final identity = await IdentityStore().load();
+        final store = IdentityStore();
+        final identity = await store.load();
+        // One fresh random code per lock; only this device's owner ever sees it.
+        final gateCode = _gate ? GateToken.newCode() : null;
         final blob = await LockedConfigCodec.encode(
           c.raw,
           adText: AdContent.text(_adCtrl.text),
           telegramUrl: tg,
           signer: identity,
-          gated: _gate,
+          gateCode: gateCode,
         );
+        String? line;
+        if (gateCode != null) {
+          line = GateToken.allowListLine(gateCode, identity.fingerprint,
+              note: c.name.isNotEmpty
+                  ? c.name.replaceAll(RegExp(r"\s+"), "_")
+                  : "");
+          await store.addGateLine(line);
+          if (mounted) await _showAllowListLine(line);
+        }
         final name = "oversea_${DateTime.now().millisecondsSinceEpoch}.ovsea";
         // File only — no plaintext, and no blob in the message text.
         await Share.shareXFiles([
@@ -100,6 +112,40 @@ class _ShareSheetState extends State<_ShareSheet> {
       if (mounted) setState(() => _busy = false);
     }
   }
+
+  /// Shown once, right after locking: the creator must put this line on the server
+  /// before anyone can connect. (It stays retrievable under Settings → Gate allow-list.)
+  Future<void> _showAllowListLine(String line) => showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          final s = S.of(ctx);
+          return AlertDialog(
+            title: Text(s.t("gate_line_title")),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(s.t("gate_line_body")),
+                const SizedBox(height: 12),
+                SelectableText(line,
+                    textDirection: TextDirection.ltr,
+                    style:
+                        const TextStyle(fontFamily: "monospace", fontSize: 12)),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Clipboard.setData(ClipboardData(text: line)),
+                child: Text(s.t("copy")),
+              ),
+              FilledButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(s.t("continue"))),
+            ],
+          );
+        },
+      );
 
   @override
   Widget build(BuildContext context) {
