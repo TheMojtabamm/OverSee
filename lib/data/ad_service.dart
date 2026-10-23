@@ -1,5 +1,7 @@
 import "dart:async";
 
+import "package:flutter/foundation.dart" show ValueNotifier;
+
 import "package:google_mobile_ads/google_mobile_ads.dart";
 
 import "../core/log.dart";
@@ -22,6 +24,14 @@ class AdService {
       defaultValue: _testInterstitial);
 
   static const Duration minGap = Duration(minutes: 5);
+
+  static const String _testBanner = "ca-app-pub-3940256099942544/9214589741";
+  static const String bannerUnitId =
+      String.fromEnvironment("AD_BANNER_ID", defaultValue: _testBanner);
+
+  /// True once consent allows ad requests and the SDK is started; the banner widget
+  /// listens to this so it appears as soon as consent is given.
+  static final ValueNotifier<bool> adsReady = ValueNotifier(false);
 
   static InterstitialAd? _ready;
   static bool _loading = false;
@@ -60,6 +70,7 @@ class AdService {
     );
     await MobileAds.instance.initialize();
     _sdkStarted = true;
+    adsReady.value = true;
     preload();
   }
 

@@ -7,6 +7,7 @@ import "../../data/tunnel_service.dart";
 import "../../domain/vpn_config.dart";
 import "../../providers.dart";
 import "../settings/settings_screen.dart";
+import "../ads/banner_ad.dart";
 import "connect_flow.dart";
 import "share_sheet.dart";
 
@@ -71,6 +72,7 @@ class ConfigsScreen extends ConsumerWidget {
                   : _ConfigList(list: list),
             ),
           ),
+          const BannerAdBox(),
         ],
       ),
     );

@@ -48,6 +48,12 @@ class TunnelPlugin(private val activity: Activity) : MethodChannel.MethodCallHan
             }
             "status" -> result.success(TunnelBridge.snapshot())
             "testDelay" -> testDelay(call, result)
+            "integrity" -> result.success(
+                mapOf(
+                    "cert" to IntegrityCheck.signingCertSha256(activity),
+                    "flags" to IntegrityCheck.flags(),
+                )
+            )
             "listApps" -> result.success(listApps())
             "openVpnSettings" -> {
                 activity.startActivity(Intent(Settings.ACTION_VPN_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

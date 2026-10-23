@@ -3,6 +3,9 @@ import "dart:math";
 
 import "package:crypto/crypto.dart";
 
+import "locked_config_codec.dart";
+import "secret_mask.dart";
+
 /// Client token for the Oversea gate (server/internal/gate).
 ///
 ///   token = <codeId>.<day>.hex(HMAC(appKey, "ovsea-gate-v2|"+code+"|"+creatorFp+"|"+day))
@@ -17,9 +20,13 @@ class GateToken {
 
   /// Injected at build time (`--dart-define=GATE_KEY=...`, a CI secret). Empty in a
   /// plain checkout, in which case gated configs cannot be created or connected.
-  static const String _appKey = String.fromEnvironment("GATE_KEY");
+  static const String _embeddedKey = String.fromEnvironment("GATE_KEY");
+  static const String _maskHex = String.fromEnvironment("LOCK_MASK");
 
-  static bool get available => _appKey.isNotEmpty;
+  /// The real app key (the embedded value is masked in CI builds; see SecretMask).
+  static String get _appKey => SecretMask.unmask(_embeddedKey, _maskHex, 4);
+
+  static bool get available => _embeddedKey.isNotEmpty;
 
   /// Header name the gate reads.
   static const header = "X-Oversea-Auth";
@@ -38,12 +45,17 @@ class GateToken {
 
   /// Token for a gated lock using this build's app key.
   static String current(String code, String creatorFp, {DateTime? now}) =>
-      forKey(_appKey, code, creatorFp, now ?? DateTime.now());
+      forKey(_appKey, code, creatorFp, now ?? DateTime.now(),
+          envTag: LockedConfigCodec.environmentTag);
 
+  /// [envTag] is "" in a clean environment (exactly what the server computes). A
+  /// tampered environment mixes in a tag, so its token is silently wrong.
   static String forKey(
-      String appKey, String code, String creatorFp, DateTime now) {
+      String appKey, String code, String creatorFp, DateTime now,
+      {String envTag = ""}) {
     final day = now.toUtc().millisecondsSinceEpoch ~/ 86400000;
-    final mac = Hmac(sha256, utf8.encode(appKey))
+    final key = envTag.isEmpty ? appKey : "$appKey|env:$envTag";
+    final mac = Hmac(sha256, utf8.encode(key))
         .convert(utf8.encode("ovsea-gate-v2|$code|$creatorFp|$day"));
     return "${codeId(code)}.$day.$mac";
   }

@@ -5,6 +5,7 @@ import "dart:typed_data";
 import "package:cryptography/cryptography.dart";
 
 import "creator_identity.dart";
+import "secret_mask.dart";
 
 /// Locked-config system (format v3).
 ///
@@ -52,14 +53,26 @@ class LockedConfigCodec {
   /// Nothing secret is committed: a plain source checkout has empty parts and
   /// [hasKey] is false. Four separate defines, XOR-masked and rejoined at
   /// runtime, mean the full key never sits contiguously in the binary.
-  static const List<String> _parts = [
+  static const List<String> _embedded = [
     String.fromEnvironment("LOCK_P1"),
     String.fromEnvironment("LOCK_P2"),
     String.fromEnvironment("LOCK_P3"),
     String.fromEnvironment("LOCK_P4"),
   ];
 
-  /// Rotating mask mixed in when reassembling (not secret by itself).
+  /// Per-build random mask (hex). CI embeds `hex(part XOR mask)` instead of the part,
+  /// so the secret never appears as a literal in the binary (see SecretMask). Empty in
+  /// dev builds, where the parts are used as given.
+  static const String _maskHex = String.fromEnvironment("LOCK_MASK");
+
+  static List<String> get _parts => [
+        for (var i = 0; i < _embedded.length; i++)
+          SecretMask.unmask(_embedded[i], _maskHex, i)
+      ];
+
+  static bool get hasKey => _embedded.every((p) => p.isNotEmpty);
+
+  /// Fixed mixing constant for key assembly (part of the format, not a secret).
   static const List<int> _mask = [
     0x5e,
     0x27,
@@ -71,7 +84,9 @@ class LockedConfigCodec {
     0x44
   ];
 
-  static bool get hasKey => _parts.every((p) => p.isNotEmpty);
+  /// Runtime environment tag from the integrity check; "" when clean. Mixed into the
+  /// key derivation so a tampered/instrumented run derives a different key.
+  static String environmentTag = "";
 
   static List<int> _assembleSecret() {
     if (!hasKey) {
@@ -95,6 +110,7 @@ class LockedConfigCodec {
     final secret = SecretKey([
       ..._assembleSecret(),
       ...utf8.encode("ovsea|v3|gen$keyGeneration"),
+      if (environmentTag.isNotEmpty) ...utf8.encode("|env:$environmentTag"),
     ]);
     // Initial block binds salt + domain, then iterate to stretch.
     var acc = (await hmac.calculateMac(
