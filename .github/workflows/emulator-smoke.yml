@@ -4,8 +4,8 @@ name: Emulator smoke test
 # launches it on an Android emulator. Fails with the crash log if it doesn't stay up.
 on:
   push:
-    branches: [claude/amazing-ride-k1xeuk]
-    paths: ["tool/emulator_smoke.sh", ".github/workflows/emulator-smoke.yml"]
+    branches: [main]
+    paths-ignore: ["docs/**", "README.md", "server/**"]
   workflow_dispatch:
     inputs:
       api:
