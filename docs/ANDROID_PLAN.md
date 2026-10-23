@@ -73,7 +73,9 @@
 24. بهینه‌سازی باتری: بدون wakelock اضافه، keepalive معقول، پشتیبانی Doze، استفاده از `NetworkCallback`.
 25. تست دستگاهی روی Android 7 تا 15 (minSdk 24) و دستگاه‌های Xiaomi/Samsung/Huawei (kill شدن سرویس).
 
-## فاز C — قفل v3 سمت سرور (مراحل ۲۶–۴۰)
+## فاز C — قفل v3 (مراحل ۲۶–۴۰)
+
+> **به‌روزرسانی:** تصمیم نهایی محصول «کاملاً آفلاین، بدون سرور هیبریدی» است. طراحی جایگزین این فاز در `docs/LOCK_OFFLINE.md` آمده و بر مراحل ۲۶–۴۰ و ۴۱–۵۵ مقدم است.
 
 26. **شناسنامه‌ی نصب (Device Binding):** در اولین اجرا کلید جفت `ECDSA P-256` در Android Keystore/StrongBox بساز (غیرقابل‌export، `setUserAuthenticationRequired=false`، با attestation).
 27. ثبت‌نام نصب جدید: ارسال `Key Attestation Certificate Chain` + `Play Integrity token` به سرور؛ سرور زنجیره را تا ریشه‌ی Google بررسی و `package name`, `signing cert digest`, `verifiedBootState = VERIFIED`, `deviceLocked` را چک کند.
