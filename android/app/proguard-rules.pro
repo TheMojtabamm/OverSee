@@ -17,3 +17,7 @@
 # Rename and flatten everything we own into one package.
 -repackageclasses ''
 -allowaccessmodification
+
+# Xray-core (gomobile bindings are called over JNI by name).
+-keep class libv2ray.** { *; }
+-keep class go.** { *; }

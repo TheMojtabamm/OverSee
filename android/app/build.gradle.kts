@@ -58,6 +58,11 @@ kotlin {
     }
 }
 
+dependencies {
+    // Xray-core for Android, built from source by tool/build_xray_aar.sh.
+    implementation(files("libs/libv2ray.aar"))
+}
+
 flutter {
     source = "../.."
 }

@@ -8,6 +8,7 @@ import "package:share_plus/share_plus.dart";
 import "../../app.dart";
 import "../../core/log.dart";
 import "../../core/strings.dart";
+import "../../domain/ad_content.dart";
 import "../../domain/locked_config_codec.dart";
 import "../../domain/vpn_config.dart";
 
@@ -58,10 +59,16 @@ class _ShareSheetState extends State<_ShareSheet> {
           _snack(s.t("no_key"));
           return;
         }
+        final tgInput = _tgCtrl.text.trim();
+        final tg = AdContent.channelUrl(tgInput);
+        if (tgInput.isNotEmpty && tg == null) {
+          _snack(s.t("invalid_tg"));
+          return;
+        }
         final blob = await LockedConfigCodec.encode(
           c.raw,
-          adText: _adCtrl.text.trim(),
-          telegramUrl: _tgCtrl.text.trim(),
+          adText: AdContent.text(_adCtrl.text),
+          telegramUrl: tg,
         );
         final name = "oversea_${DateTime.now().millisecondsSinceEpoch}.ovsea";
         // File only — no plaintext, and no blob in the message text.

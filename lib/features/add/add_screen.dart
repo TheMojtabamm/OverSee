@@ -7,6 +7,7 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 
 import "../../core/log.dart";
 import "../../core/strings.dart";
+import "../../domain/ad_content.dart";
 import "../../domain/config_parser.dart";
 import "../../domain/locked_config_codec.dart";
 import "../../domain/vpn_config.dart";
@@ -117,8 +118,8 @@ class _AddScreenState extends ConsumerState<AddScreen> {
               protocol: c.protocol,
               raw: c.raw,
               source: "locked",
-              adText: env.adText,
-              telegramUrl: env.telegramUrl,
+              adText: AdContent.text(env.adText),
+              telegramUrl: AdContent.channelUrl(env.telegramUrl),
               locked: true,
             ))
         .toList();

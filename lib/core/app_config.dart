@@ -19,6 +19,10 @@ class AppConfig {
   static const String _pinsCsv =
       String.fromEnvironment("TLS_PINS", defaultValue: "");
 
+  /// Public privacy policy URL (required by Google Play for VPN + ads apps).
+  static const String privacyPolicyUrl =
+      String.fromEnvironment("PRIVACY_POLICY_URL", defaultValue: "");
+
   static Flavor get flavor => Flavor.values.firstWhere(
         (f) => f.name == _flavorName,
         orElse: () => Flavor.dev,

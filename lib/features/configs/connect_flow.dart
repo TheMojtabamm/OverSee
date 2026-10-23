@@ -1,0 +1,193 @@
+import "dart:async";
+
+import "package:flutter/material.dart";
+import "package:flutter_riverpod/flutter_riverpod.dart";
+import "package:flutter/services.dart";
+import "package:url_launcher/url_launcher.dart";
+
+import "../../app.dart";
+import "../../core/log.dart";
+import "../../core/strings.dart";
+import "../../data/ad_service.dart";
+import "../../data/tunnel_service.dart";
+import "../../domain/ad_content.dart";
+import "../../domain/vpn_config.dart";
+import "../../domain/xray_config_builder.dart";
+import "../../providers.dart";
+
+/// Tap on a config: disconnect if it is the active one, otherwise connect.
+///
+/// Order matters for Google Play: the VPN disclosure + consent comes *before* the
+/// system VPN permission prompt, and the ad comes *after* the tunnel is up.
+Future<void> toggleConnection(
+    BuildContext context, WidgetRef ref, VpnConfig c) async {
+  final svc = ref.read(tunnelServiceProvider);
+  final current = ref.read(tunnelStateProvider).valueOrNull ?? TunnelState.idle;
+  final active = ref.read(activeConfigIdProvider);
+
+  final busy = current.phase == TunnelPhase.connected ||
+      current.phase == TunnelPhase.connecting ||
+      current.phase == TunnelPhase.blocked;
+  if (busy && active == c.id) {
+    await svc.stop();
+    return;
+  }
+  if (busy) {
+    await svc.stop();
+    // Let the previous service finish tearing down before starting a new one.
+    await svc.states
+        .firstWhere((s) => s.phase == TunnelPhase.disconnected)
+        .timeout(const Duration(seconds: 5), onTimeout: () => TunnelState.idle);
+  }
+  if (!context.mounted) return;
+  await _connect(context, ref, c);
+}
+
+Future<void> _connect(BuildContext context, WidgetRef ref, VpnConfig c) async {
+  final s = S.of(context);
+  final messenger = ScaffoldMessenger.of(context);
+  final svc = ref.read(tunnelServiceProvider);
+  final store = ref.read(settingsStoreProvider);
+
+  // 1. Third-party (owner) message, clearly labelled.
+  if (c.locked) {
+    final ok = await _showSponsored(context, c);
+    if (!ok || !context.mounted) return;
+  }
+
+  // 2. Prominent VPN disclosure, once, before the system permission prompt.
+  if (!await store.disclosureAccepted()) {
+    if (!context.mounted) return;
+    final agreed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.vpn_lock, size: 40, color: accent),
+        title: Text(s.t("disclosure_title")),
+        content: SingleChildScrollView(child: Text(s.t("disclosure_body"))),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(s.t("cancel"))),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(s.t("agree"))),
+        ],
+      ),
+    );
+    if (agreed != true) return;
+    await store.acceptDisclosure();
+  }
+
+  // 3. Notification permission (best effort) and the system VPN permission.
+  await svc.requestNotifications();
+  if (!await svc.prepare()) {
+    messenger.showSnackBar(SnackBar(content: Text(s.t("vpn_denied"))));
+    return;
+  }
+
+  // 4. Build the Xray config.
+  final settings = await ref.read(settingsProvider.future);
+  final String json;
+  try {
+    json = XrayConfigBuilder.build(c.raw, settings.toOptions());
+  } on UnsupportedConfigException {
+    messenger.showSnackBar(SnackBar(content: Text(s.t("unsupported"))));
+    return;
+  }
+
+  // 5. Start and wait for the outcome.
+  ref.read(activeConfigIdProvider.notifier).state = c.id;
+  final outcome = Completer<TunnelState>();
+  final sub = svc.states.listen((st) {
+    if (!outcome.isCompleted &&
+        (st.phase == TunnelPhase.connected || st.phase == TunnelPhase.error)) {
+      outcome.complete(st);
+    }
+  });
+  try {
+    await svc.start(
+      configJson: json,
+      label: c.name.isNotEmpty
+          ? c.name
+          : (c.locked ? s.t("locked") : (c.host ?? "")),
+      settings: settings,
+    );
+    final st = await outcome.future.timeout(
+      const Duration(seconds: 25),
+      onTimeout: () => const TunnelState(TunnelPhase.error),
+    );
+    if (st.phase != TunnelPhase.connected) {
+      await svc.stop();
+      messenger.showSnackBar(SnackBar(content: Text(s.t("connect_failed"))));
+      return;
+    }
+  } on PlatformException catch (e) {
+    Log.d("start failed: ${e.code}");
+    messenger.showSnackBar(SnackBar(content: Text(s.t("connect_failed"))));
+    return;
+  } finally {
+    await sub.cancel();
+  }
+
+  // 6. Tunnel is up: this is the natural break for an ad.
+  final first = !await store.firstConnectDone();
+  await store.markFirstConnectDone();
+  AdService.showAfterConnect(
+    firstEverConnect: first,
+    stillConnected: () =>
+        ref.read(tunnelStateProvider).valueOrNull?.phase ==
+        TunnelPhase.connected,
+  );
+}
+
+/// Owner-supplied text/link from a locked file. Third-party content, so: labelled
+/// "Sponsored", sanitised, https Telegram links only, and the choice is explicit.
+Future<bool> _showSponsored(BuildContext context, VpnConfig c) async {
+  final s = S.of(context);
+  final text = AdContent.text(c.adText);
+  final url = AdContent.channelUrl(c.telegramUrl);
+  if (text == null && url == null) return true;
+
+  final proceed = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => AlertDialog(
+      icon: const Icon(Icons.campaign, size: 40, color: accent),
+      title: Text(s.t("sponsored")),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(s.t("sponsored_note"),
+              style: Theme.of(ctx).textTheme.bodySmall,
+              textAlign: TextAlign.center),
+          if (text != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(text, textAlign: TextAlign.center),
+            ),
+          if (url != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: OutlinedButton.icon(
+                onPressed: () => launchUrl(Uri.parse(url),
+                    mode: LaunchMode.externalApplication),
+                icon: const Icon(Icons.open_in_new, size: 18),
+                label: Text(s.t("open_channel")),
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(s.t("cancel"))),
+        FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(s.t("continue"))),
+      ],
+    ),
+  );
+  return proceed == true;
+}

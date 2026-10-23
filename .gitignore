@@ -33,3 +33,6 @@ server/bin/
 .claude/
 .flutter-plugins-dependencies
 .flutter-plugins
+
+# Built from source by tool/build_xray_aar.sh
+android/app/libs/

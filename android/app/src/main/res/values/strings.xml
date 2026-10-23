@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tunnel_channel">VPN status</string>
+    <string name="tunnel_starting">Connecting…</string>
+    <string name="tunnel_connected">Connected — %1$s</string>
+    <string name="tunnel_blocked">Connection lost — traffic is blocked</string>
+    <string name="tunnel_open_app">Open Oversea to reconnect — traffic is blocked</string>
+    <string name="tunnel_disconnect">Disconnect</string>
+</resources>

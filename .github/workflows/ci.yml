@@ -26,6 +26,25 @@ jobs:
           --dart-define=LOCK_P1=aaaaaaaaaaaaaaaa --dart-define=LOCK_P2=bbbbbbbbbbbbbbbb
           --dart-define=LOCK_P3=cccccccccccccccc --dart-define=LOCK_P4=dddddddddddddddd
 
+  xray-config:
+    # Generates configs from the Dart builder and loads each with Xray-core's own
+    # loader (same code the app runs), so schema drift fails here, not on a phone.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.7"
+          channel: stable
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - run: flutter pub get
+      - run: dart run tool/dump_xray_configs.dart /tmp/xray_out
+      - name: Validate with Xray-core
+        working-directory: tool/validate_xray_config
+        run: go run . /tmp/xray_out/*.json
+
   server:
     runs-on: ubuntu-latest
     defaults:

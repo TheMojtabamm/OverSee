@@ -2,6 +2,9 @@ import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
 import "data/config_store.dart";
+import "data/settings_store.dart";
+import "data/tunnel_service.dart";
+import "domain/tunnel_settings.dart";
 import "domain/vpn_config.dart";
 
 final configStoreProvider = Provider<ConfigStore>((ref) => ConfigStore());
@@ -36,3 +39,33 @@ final tabProvider = StateProvider<int>((ref) => 0);
 
 /// null = follow the device language.
 final localeProvider = StateProvider<Locale?>((ref) => null);
+
+final settingsStoreProvider = Provider<SettingsStore>((ref) => SettingsStore());
+final tunnelServiceProvider = Provider<TunnelService>((ref) => TunnelService());
+
+class SettingsNotifier extends AsyncNotifier<TunnelSettings> {
+  SettingsStore get _store => ref.read(settingsStoreProvider);
+
+  @override
+  Future<TunnelSettings> build() => _store.load();
+
+  Future<void> change(TunnelSettings Function(TunnelSettings) change) async {
+    final next = change(state.valueOrNull ?? const TunnelSettings());
+    state = AsyncData(next);
+    await _store.save(next);
+  }
+}
+
+final settingsProvider =
+    AsyncNotifierProvider<SettingsNotifier, TunnelSettings>(
+        SettingsNotifier.new);
+
+/// Live tunnel state from the native VpnService.
+final tunnelStateProvider = StreamProvider<TunnelState>((ref) async* {
+  final svc = ref.watch(tunnelServiceProvider);
+  yield await svc.status();
+  yield* svc.states;
+});
+
+/// Which saved config the user last asked to connect.
+final activeConfigIdProvider = StateProvider<String?>((ref) => null);
