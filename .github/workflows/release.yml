@@ -11,6 +11,10 @@ on:
         description: "Test build: skip the AdMob check, keep the APK as a build artifact (no Release)"
         type: boolean
         default: true
+      tag:
+        description: "Also publish a GitHub Release with this tag (e.g. v1.0-beta.9). Empty = artifact only"
+        type: string
+        default: ""
 
 permissions:
   contents: write # needed to create the Release and upload assets
@@ -149,9 +153,11 @@ jobs:
           retention-days: 14
 
       - name: Publish Release with the raw APK
-        if: ${{ github.ref_type == 'tag' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.APK_NAME }}
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-test') }}
+        if: ${{ github.ref_type == 'tag' || inputs.tag != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag != '' && inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$TAG" "$APK_NAME" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --latest --title "$TAG" --generate-notes \
+            || gh release upload "$TAG" "$APK_NAME" --clobber --repo "$GITHUB_REPOSITORY"
