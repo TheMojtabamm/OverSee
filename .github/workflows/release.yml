@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag like v1.0 to build signed artifacts and publish a GitHub Release.
+# Push a tag like v1.0 to build the signed APK and publish a GitHub Release.
 #   git tag v1.0 && git push origin v1.0
 on:
   push:
@@ -11,6 +11,10 @@ on:
         description: "Test build: skip the AdMob check, keep the APK as a build artifact (no Release)"
         type: boolean
         default: true
+      tag:
+        description: "Also publish a GitHub Release with this tag (e.g. v1.0-beta.9). Empty = artifact only"
+        type: string
+        default: ""
 
 permissions:
   contents: write # needed to create the Release and upload assets
@@ -21,8 +25,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Name of the APK
-        run: echo "APK_NAME=oversea-$(echo '${{ github.ref_name }}' | tr '/' '-').apk" >> "$GITHUB_ENV"
+      - name: Name and version of the APK
+        env:
+          TAG: ${{ inputs.tag != '' && inputs.tag || (github.ref_type == 'tag' && github.ref_name || '') }}
+        run: |
+          if [ -n "$TAG" ]; then NAME="$TAG"; VER="${TAG#v}"; else NAME="test-${{ github.run_number }}"; VER="1.0.0-test.${{ github.run_number }}"; fi
+          echo "APK_NAME=oversea-$NAME.apk" >> "$GITHUB_ENV"
+          # An increasing versionCode, so every build installs over the previous one
+          # (Android refuses a lower or equal versionCode).
+          echo "BUILD_NUMBER=$((100 + ${{ github.run_number }}))" >> "$GITHUB_ENV"
+          echo "BUILD_NAME=$VER" >> "$GITHUB_ENV"
+
+      # A published Release must have a working lock: refuse early (before the 10-minute
+      # build) if the lock/gate secrets are missing.
+      - name: Require lock secrets for a published release
+        if: ${{ github.ref_type == 'tag' || inputs.tag != '' }}
+        env:
+          LOCK_P1: ${{ secrets.LOCK_P1 }}
+          LOCK_P2: ${{ secrets.LOCK_P2 }}
+          LOCK_P3: ${{ secrets.LOCK_P3 }}
+          LOCK_P4: ${{ secrets.LOCK_P4 }}
+          GATE_KEY: ${{ secrets.GATE_KEY }}
+        run: |
+          fail=0
+          for v in LOCK_P1 LOCK_P2 LOCK_P3 LOCK_P4 GATE_KEY; do
+            [ -n "${!v}" ] || { echo "::error::repository secret $v is missing"; fail=1; }
+          done
+          exit $fail
 
       - uses: actions/setup-java@v4
         with:
@@ -110,7 +139,8 @@ jobs:
         env:
           ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
         run: >
-          flutter build apk --release
+          flutter build apk --release --target-platform android-arm64
+          --build-number=${{ env.BUILD_NUMBER }} --build-name=${{ env.BUILD_NAME }}
           --dart-define=EXPECTED_CERTS=${{ env.EXPECTED_CERTS }} --dart-define=AD_INTERSTITIAL_ID=${{ secrets.AD_INTERSTITIAL_ID }} --dart-define=AD_BANNER_ID=${{ secrets.AD_BANNER_ID }}
           --obfuscate --split-debug-info=build/symbols
 
@@ -121,7 +151,12 @@ jobs:
           LOCK_P3: ${{ secrets.LOCK_P3 }}
           LOCK_P4: ${{ secrets.LOCK_P4 }}
           GATE_KEY: ${{ secrets.GATE_KEY }}
-        run: tool/verify_apk_secrets.sh build/app/outputs/flutter-apk/app-release.apk
+        run: |
+          if [ -z "$LOCK_P1$LOCK_P2$LOCK_P3$LOCK_P4$GATE_KEY" ] && [ "${{ inputs.test_build }}" = true ]; then
+            echo "::warning::LOCK_P1..P4 / GATE_KEY are not set: this test APK cannot open locked files (it fails closed)."
+            exit 0
+          fi
+          tool/verify_apk_secrets.sh build/app/outputs/flutter-apk/app-release.apk
 
       # Re-sign with a stable release key (from secrets). If the secret is not set,
       # fall back to a throwaway key so the APK is still installable for testing.
@@ -144,30 +179,11 @@ jobs:
           retention-days: 14
 
       - name: Publish Release with the raw APK
-        if: ${{ github.ref_type == 'tag' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.APK_NAME }}
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-test') }}
-
-  windows:
-    if: ${{ github.ref_type == 'tag' }}
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.47.7"
-          channel: stable
-      - name: Generate Windows platform files
-        run: flutter create --platforms=windows --org com.oversea .
-      - run: flutter pub get
-      - name: Build Windows (release)
-        run: flutter build windows --release --dart-define=EXPECTED_CERTS=${{ env.EXPECTED_CERTS }} --dart-define=AD_INTERSTITIAL_ID=${{ secrets.AD_INTERSTITIAL_ID }} --dart-define=AD_BANNER_ID=${{ secrets.AD_BANNER_ID }}
-      - name: Package release folder
-        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath oversea-${{ github.ref_name }}-windows.zip
-      - name: Attach Windows build to the Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: oversea-${{ github.ref_name }}-windows.zip
+        if: ${{ github.ref_type == 'tag' || inputs.tag != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag != '' && inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$TAG" "$APK_NAME" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --latest --title "$TAG" --generate-notes \
+            || gh release upload "$TAG" "$APK_NAME" --clobber --repo "$GITHUB_REPOSITORY"
