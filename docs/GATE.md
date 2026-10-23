@@ -40,25 +40,37 @@ every copy of that lock stops working. Issue a new file (new code) to real follo
    allow-list). Add it to `allow.txt` on the server.
 3. Run the gate in front of Xray (below). Hand out the `.ovsea` file.
 
-## Server setup
+## Server setup — the `oversee` tool
+
+One command installs a single binary (checksum-verified, no dependencies) and a
+systemd unit:
+
+```
+curl -fsSL https://github.com/themojtabamm/OverSee/releases/latest/download/install.sh | sudo bash
+```
+
+Then `sudo oversee` opens the manager (TUI):
+
+| Tab | What it does |
+|---|---|
+| **Status** | service state, counts, and what's still missing. `s` start · `x` stop · `R` restart · `e` enable at boot |
+| **Locks** | list the locks you allowed. `a` paste the line the app shows → live in ~3 s · `d` revoke (asks first) |
+| **Keys** | the app key(s) your Oversea build was made with (`GATE_KEY`). `n` add · `g` generate · `d` remove. Newest first; keep the previous one until old builds age out. No restart needed |
+| **Setup** | set your domain / Xray port; shows a ready-made Xray WebSocket inbound and the matching client link |
+| **Logs** | recent gate logs |
+
+Scriptable too: `oversee list`, `oversee add "<line>"`, `oversee revoke <id>`,
+`oversee keys`, `oversee key add <key>`, `oversee status`.
+
 Xray listens on `127.0.0.1:10000` with a **WebSocket or HTTPUpgrade** inbound and
-`security: none`; the gate owns `:443` and the TLS certificate.
+`security: none` (the Setup tab prints one); the gate owns `:80/:443` and gets a
+Let's Encrypt certificate for your domain automatically. Files live in `/etc/oversea`
+(`allow.txt`, `keys.txt` 0600, `gate.conf`). A malformed edit to a file is ignored
+(the previous list stays active) and logged. With no app key the gate refuses
+everyone (fail closed). Uninstall: `… | sudo bash -s -- --uninstall`.
 
-```
-# build
-cd server && go build -o gate ./cmd/gate
-
-# run (as a service); GATE_KEYS = the app key(s) your Oversea build was made with
-GATE_KEYS="<current>,<previous>" ./gate -domain vpn.example.com \
-    -upstream 127.0.0.1:10000 -allow /etc/oversea/allow.txt
-```
-
-`allow.txt`:
-```
-# <32-hex code> <creator fingerprint> [note]
-0123456789abcdef0123456789abcdef 3FA9-0C21-B7D4-9E10 channel-A
-```
-A malformed edit is ignored (the previous list stays active) and logged.
+The release is built by `.github/workflows/server-release.yml` when you push a tag
+like `server-v1.0.0` (the repo must be public for the one-liner to download it).
 
 ## Limits
 * WebSocket / HTTPUpgrade only (one check per connection). Reality+TCP and XHTTP

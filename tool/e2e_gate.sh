@@ -40,9 +40,11 @@ cat > "$W/server.json" <<EOF
 EOF
 "$XRAY" run -c "$W/server.json" >"$W/server.log" 2>&1 &
 
-(cd "$ROOT/server" && go build -o "$W/gate" ./cmd/gate)
+(cd "$ROOT/server" && go build -o "$W/oversee" ./cmd/oversee)
 echo "$CODE $OWNER_FP e2e" > "$W/allow.txt"
-GATE_KEYS="old-key,$KEY" "$W/gate" -plain 127.0.0.1:8081 -upstream 127.0.0.1:10000 -allow "$W/allow.txt" >"$W/gate.log" 2>&1 &
+# keys file: newest first; "old-key" stands in for a previous release
+printf '%s\n%s\n' "$KEY" "old-key" > "$W/keys.txt"
+"$W/oversee" gate -plain 127.0.0.1:8081 -upstream 127.0.0.1:10000 -allow "$W/allow.txt" -keys "$W/keys.txt" >"$W/gate.log" 2>&1 &
 
 # Client configs from the app's builder; swap the Android tun inbound for socks.
 mk() { # name, extra-args...

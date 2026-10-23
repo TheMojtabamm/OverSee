@@ -91,6 +91,34 @@ func TestAppKeyRotation(t *testing.T) {
 	}
 }
 
+func TestNoKeysFailsClosed(t *testing.T) {
+	if Valid(Token(appKey, code, ownerFp, now), allow, nil, now) {
+		t.Fatal("with no app key configured nothing may pass")
+	}
+}
+
+func TestKeyFileReload(t *testing.T) {
+	path := t.TempDir() + "/keys.txt"
+	os.WriteFile(path, []byte("# current\nkey-new\nkey-old # previous\n"), 0o600)
+	kf, err := LoadKeyFile(path, [][]byte{[]byte("env-key")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := kf.Get()
+	if len(got) != 3 || string(got[0]) != "key-new" || string(got[1]) != "key-old" || string(got[2]) != "env-key" {
+		t.Fatalf("%q", got)
+	}
+	os.WriteFile(path, []byte("key-newer\n"), 0o600)
+	if err := kf.reload(); err != nil || len(kf.Get()) != 2 {
+		t.Fatalf("%v %q", err, kf.Get())
+	}
+	// missing file is fine (env keys only)
+	kf2, err := LoadKeyFile(t.TempDir()+"/nope", [][]byte{[]byte("e")})
+	if err != nil || len(kf2.Get()) != 1 {
+		t.Fatalf("%v", err)
+	}
+}
+
 func TestParseAllowList(t *testing.T) {
 	src := "# my locks\n" + code + " 3fa9-0c21-b7d4-9e10  channel A  # trailing\n\n"
 	m, err := ParseAllowList(bufio.NewScanner(strings.NewReader(src)))
@@ -150,7 +178,7 @@ func startUpstream(t *testing.T) (*url.URL, chan http.Header) {
 
 func TestRejectsWithoutTokenAndLooksLikeA404(t *testing.T) {
 	up, seen := startUpstream(t)
-	g := httptest.NewServer(newWithClock(up, list, appKeys, func() time.Time { return now }))
+	g := httptest.NewServer(newWithClock(up, list, func() [][]byte { return appKeys }, func() time.Time { return now }))
 	defer g.Close()
 
 	for _, hdr := range []string{"", "garbage", Token([]byte("wrong"), code, ownerFp, now), Token(appKey, code, thiefFp, now)} {
@@ -177,7 +205,7 @@ func TestRejectsWithoutTokenAndLooksLikeA404(t *testing.T) {
 
 func TestForwardsValidRequestAndStripsToken(t *testing.T) {
 	up, seen := startUpstream(t)
-	g := httptest.NewServer(newWithClock(up, list, appKeys, func() time.Time { return now }))
+	g := httptest.NewServer(newWithClock(up, list, func() [][]byte { return appKeys }, func() time.Time { return now }))
 	defer g.Close()
 
 	req, _ := http.NewRequest("GET", g.URL+"/x", nil)
@@ -198,7 +226,7 @@ func TestForwardsValidRequestAndStripsToken(t *testing.T) {
 
 func TestWebSocketUpgradeAndStreaming(t *testing.T) {
 	up, _ := startUpstream(t)
-	g := httptest.NewServer(newWithClock(up, list, appKeys, func() time.Time { return now }))
+	g := httptest.NewServer(newWithClock(up, list, func() [][]byte { return appKeys }, func() time.Time { return now }))
 	defer g.Close()
 
 	conn, err := net.Dial("tcp", strings.TrimPrefix(g.URL, "http://"))

@@ -1,0 +1,190 @@
+package oversee
+
+import (
+	"bufio"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"oversea/server/internal/gate"
+)
+
+const (
+	codeA = "0123456789abcdef0123456789abcdef"
+	codeB = "ffffffffffffffffffffffffffffffff"
+	fp    = "3FA9-0C21-B7D4-9E10"
+)
+
+func paths(t *testing.T) Paths {
+	t.Setenv("OVERSEE_DIR", filepath.Join(t.TempDir(), "etc"))
+	return DefaultPaths()
+}
+
+func TestAddListRevokeLock(t *testing.T) {
+	p := paths(t)
+	if l, _ := p.Locks(); len(l) != 0 {
+		t.Fatal("empty at start")
+	}
+	if _, err := p.AddLock(codeA + " " + fp + " channel A"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.AddLock(codeB + " " + fp); err != nil {
+		t.Fatal(err)
+	}
+	locks, _ := p.Locks()
+	if len(locks) != 2 {
+		t.Fatalf("%v", locks)
+	}
+
+	// re-adding the same code replaces, not duplicates
+	if _, err := p.AddLock(codeA + " " + fp + " renamed"); err != nil {
+		t.Fatal(err)
+	}
+	locks, _ = p.Locks()
+	if len(locks) != 2 {
+		t.Fatalf("duplicate created: %v", locks)
+	}
+
+	// the file the gate reads is valid and contains exactly these entries
+	f, _ := os.Open(p.Allow)
+	defer f.Close()
+	m, err := gate.ParseAllowList(newScanner(f))
+	if err != nil || len(m) != 2 {
+		t.Fatalf("%v %v", m, err)
+	}
+
+	// revoke by code-id prefix
+	id := gate.CodeID(codeA)
+	got, err := p.RevokeLock(id[:6])
+	if err != nil || got.Code != codeA {
+		t.Fatalf("%v %v", got, err)
+	}
+	locks, _ = p.Locks()
+	if len(locks) != 1 || locks[0].Code != codeB {
+		t.Fatalf("%v", locks)
+	}
+}
+
+func TestRevokeErrors(t *testing.T) {
+	p := paths(t)
+	p.AddLock(codeA + " " + fp)
+	if _, err := p.RevokeLock("ab"); err == nil {
+		t.Error("too short must be rejected")
+	}
+	if _, err := p.RevokeLock("zzzzzz"); err == nil {
+		t.Error("no match must error")
+	}
+	// ambiguous: both codes start with different chars but we force a shared prefix
+	p.AddLock(codeA[:31] + "0 " + fp)
+	if _, err := p.RevokeLock(codeA[:8]); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Errorf("want ambiguous, got %v", err)
+	}
+}
+
+func TestAddLockValidation(t *testing.T) {
+	p := paths(t)
+	for _, bad := range []string{"", "hello", codeA, "short " + fp, "zz" + codeA[2:] + " " + fp} {
+		if _, err := p.AddLock(bad); err == nil {
+			t.Errorf("should reject %q", bad)
+		}
+	}
+	if l, _ := p.Locks(); len(l) != 0 {
+		t.Fatal("nothing may be written for bad input")
+	}
+}
+
+func TestLockPreservesCommentsOfOtherLines(t *testing.T) {
+	p := paths(t)
+	os.MkdirAll(p.Dir, 0o750)
+	os.WriteFile(p.Allow, []byte("# my notes\n"+codeA+" "+fp+" A\n"), 0o640)
+	p.AddLock(codeB + " " + fp + " B")
+	b, _ := os.ReadFile(p.Allow)
+	if !strings.HasPrefix(string(b), "# my notes\n") {
+		t.Fatalf("comment lost:\n%s", b)
+	}
+	p.RevokeLock(gate.CodeID(codeA)[:6])
+	b, _ = os.ReadFile(p.Allow)
+	if !strings.Contains(string(b), "# my notes") || strings.Contains(string(b), codeA) {
+		t.Fatalf("%s", b)
+	}
+}
+
+func TestKeys(t *testing.T) {
+	p := paths(t)
+	if k, _ := p.ListKeys(); len(k) != 0 {
+		t.Fatal()
+	}
+	if err := p.AddKey("first-key-123"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.AddKey("second-key-456"); err != nil {
+		t.Fatal(err)
+	}
+	k, _ := p.ListKeys()
+	if len(k) != 2 || k[0] != "second-key-456" || k[1] != "first-key-123" {
+		t.Fatalf("newest must be first: %v", k)
+	}
+	p.AddKey("first-key-123") // moves to front, no duplicate
+	k, _ = p.ListKeys()
+	if len(k) != 2 || k[0] != "first-key-123" {
+		t.Fatalf("%v", k)
+	}
+	if err := p.RemoveKey(0); err != nil {
+		t.Fatal(err)
+	}
+	k, _ = p.ListKeys()
+	if len(k) != 1 || k[0] != "second-key-456" {
+		t.Fatalf("%v", k)
+	}
+	for _, bad := range []string{"short", "has space 12345", "with#hash123"} {
+		if p.AddKey(bad) == nil {
+			t.Errorf("should reject %q", bad)
+		}
+	}
+	if p.RemoveKey(9) == nil {
+		t.Error("out of range")
+	}
+	st, _ := os.Stat(p.Keys)
+	if st.Mode().Perm() != 0o600 {
+		t.Errorf("keys file mode %v, want 0600", st.Mode().Perm())
+	}
+	// the gate can load what we wrote
+	kf, err := gate.LoadKeyFile(p.Keys, nil)
+	if err != nil || len(kf.Get()) != 1 {
+		t.Fatalf("%v", err)
+	}
+}
+
+func TestSettingsRoundTrip(t *testing.T) {
+	p := paths(t)
+	if s := p.LoadSettings(); s.Upstream != "127.0.0.1:10000" || s.Domain != "" {
+		t.Fatalf("%+v", s)
+	}
+	want := Settings{Domain: "vpn.example.com", Upstream: "127.0.0.1:12345"}
+	if err := p.SaveSettings(want); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.LoadSettings(); got != want {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestMaskAndSnippet(t *testing.T) {
+	if m := MaskKey("abcdefghijkl"); strings.Contains(m, "abcdefgh") || !strings.HasSuffix(m, "ijkl") {
+		t.Fatal(m)
+	}
+	u := NewUUID()
+	if len(u) != 36 || u[14] != '4' {
+		t.Fatalf("bad uuid %s", u)
+	}
+	l := ClientLink("vpn.example.com", "/ws-ab12", u, "x")
+	if !strings.Contains(l, "path=%2Fws-ab12") || !strings.Contains(l, "type=ws") {
+		t.Fatal(l)
+	}
+	if !strings.Contains(XrayInbound(10000, "/ws-ab12", u), `"path": "/ws-ab12"`) {
+		t.Fatal("snippet")
+	}
+}
+
+func newScanner(f *os.File) *bufio.Scanner { return bufio.NewScanner(f) }

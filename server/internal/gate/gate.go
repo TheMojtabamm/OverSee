@@ -69,6 +69,9 @@ func Token(appKey []byte, code, fp string, t time.Time) string {
 
 // Valid reports whether tok is correct for an allow-listed entry and any app key.
 func Valid(tok string, entries map[string]Entry, appKeys [][]byte, now time.Time) bool {
+	if len(appKeys) == 0 {
+		return false // no key configured: fail closed
+	}
 	parts := strings.Split(tok, ".")
 	if len(parts) != 3 || len(parts[2]) != 64 {
 		return false
@@ -175,11 +178,11 @@ func (a *AllowList) Get() map[string]Entry { return *a.cur.Load() }
 
 // New returns a handler that forwards valid requests to upstream and answers
 // everything else with a plain 404, so a probe learns nothing about the service.
-func New(upstream *url.URL, entries func() map[string]Entry, appKeys [][]byte) http.Handler {
+func New(upstream *url.URL, entries func() map[string]Entry, appKeys func() [][]byte) http.Handler {
 	return newWithClock(upstream, entries, appKeys, time.Now)
 }
 
-func newWithClock(upstream *url.URL, entries func() map[string]Entry, appKeys [][]byte, now func() time.Time) http.Handler {
+func newWithClock(upstream *url.URL, entries func() map[string]Entry, appKeys func() [][]byte, now func() time.Time) http.Handler {
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(upstream)
@@ -188,7 +191,7 @@ func newWithClock(upstream *url.URL, entries func() map[string]Entry, appKeys []
 		FlushInterval: -1, // stream immediately; never buffer a tunnel
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !Valid(r.Header.Get(Header), entries(), appKeys, now()) {
+		if !Valid(r.Header.Get(Header), entries(), appKeys(), now()) {
 			http.NotFound(w, r)
 			return
 		}
