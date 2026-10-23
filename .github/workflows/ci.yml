@@ -83,6 +83,9 @@ jobs:
       - run: XRAY="$RUNNER_TEMP/xray" tool/e2e_gate.sh
       # Same, but with a fake CDN edge in front and the gate in -cdn/-only-proxy mode.
       - run: XRAY="$RUNNER_TEMP/xray" tool/e2e_cdn.sh
+      # The whole story with the real app code: lock -> decode (bot) -> import -> connect.
+      # A decoded config and a re-locked copy must be refused; only the owner's file connects.
+      - run: XRAY="$RUNNER_TEMP/xray" tool/e2e_lockflow.sh
 
   server:
     runs-on: ubuntu-latest

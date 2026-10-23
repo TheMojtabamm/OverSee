@@ -88,6 +88,14 @@ func (r Result) String() string {
 // Check validates tok against an allow-listed entry and any app key. It returns the
 // matching entry's code id on success.
 func Check(tok string, entries map[string]Entry, appKeys [][]byte, now time.Time) (Result, string) {
+	return CheckSkew(tok, entries, appKeys, now, 1)
+}
+
+// CheckSkew is Check with the accepted day window set to ±skewDays. The token's day comes
+// from the phone's clock, and Xray reuses the same header for every reconnect of a session,
+// so a longer window lets a tunnel that has been up for days reconnect. The cost is that a
+// captured token stays replayable for 2*skewDays+1 days (still only for that one lock).
+func CheckSkew(tok string, entries map[string]Entry, appKeys [][]byte, now time.Time, skewDays int64) (Result, string) {
 	if len(appKeys) == 0 {
 		return NoKeys, "" // no key configured: fail closed
 	}
@@ -107,7 +115,7 @@ func Check(tok string, entries map[string]Entry, appKeys [][]byte, now time.Time
 		return BadFormat, ""
 	}
 	cur := now.UTC().Unix() / bucketSeconds
-	if day < cur-1 || day > cur+1 {
+	if day < cur-skewDays || day > cur+skewDays {
 		return BadDay, ""
 	}
 	good := false
@@ -221,6 +229,9 @@ type Options struct {
 
 	// Diagnostic endpoint for `oversee cdn-test` (nil = always 404).
 	Probe *Probe
+
+	// Accepted token-day window (±days). 0 means the default of 1.
+	SkewDays int
 }
 
 // New returns a handler that forwards valid requests to upstream and answers
@@ -272,7 +283,11 @@ func newWithClock(upstream *url.URL, entries func() map[string]Entry, appKeys fu
 			http.NotFound(w, r)
 			return
 		}
-		res, id := Check(r.Header.Get(Header), entries(), appKeys(), t)
+		skew := int64(o.SkewDays)
+		if skew <= 0 {
+			skew = 1
+		}
+		res, id := CheckSkew(r.Header.Get(Header), entries(), appKeys(), t, skew)
 		if res != OK {
 			if o.Limiter != nil {
 				o.Limiter.Fail(ip, t)

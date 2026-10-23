@@ -34,6 +34,7 @@ func RunGate(p Paths, args []string) error {
 	onlyProxy := fs.Bool("only-proxy", st.OnlyProxy, "refuse connections that did not come through the CDN")
 	cert := fs.String("cert", st.Cert, "TLS certificate file (e.g. Cloudflare Origin CA)")
 	keyFile := fs.String("key", st.Key, "TLS private key file")
+	tokenDays := fs.Int("token-days", st.TokenDays, "accept tokens from ±N days (default 1): longer lets a tunnel up for days reconnect")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -118,6 +119,7 @@ func RunGate(p Paths, args []string) error {
 		Provider:  prov,
 		OnlyProxy: *onlyProxy,
 		Probe:     &gate.Probe{File: p.Probe},
+		SkewDays:  clampDays(*tokenDays),
 	})
 	log.Printf("gate: %d lock(s), %d app key(s), upstream %s", len(al.Get()), len(kf.Get()), *upstream)
 
@@ -194,4 +196,14 @@ func (c *certReloader) get(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 		c.cur, c.mod = &pair, st.ModTime()
 	}
 	return c.cur, nil
+}
+
+func clampDays(n int) int {
+	switch {
+	case n < 1:
+		return 1
+	case n > 7:
+		return 7
+	}
+	return n
 }

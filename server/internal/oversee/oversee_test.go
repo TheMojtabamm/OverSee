@@ -200,6 +200,14 @@ func TestSetSetting(t *testing.T) {
 	if err := p.SetSetting("only-proxy", "on"); err != nil {
 		t.Fatal(err)
 	}
+	if err := p.SetSetting("token-days", "3"); err != nil || p.LoadSettings().TokenDays != 3 {
+		t.Fatalf("token-days: %v", err)
+	}
+	for _, bad := range []string{"0", "8", "x"} {
+		if p.SetSetting("token-days", bad) == nil {
+			t.Errorf("token-days %q must be rejected", bad)
+		}
+	}
 	s := p.LoadSettings()
 	if s.Domain != "vpn.example.com" || s.Upstream != "127.0.0.1:12000" || s.LeakIPs != 40 || s.CDN != "cloudflare" || !s.OnlyProxy || s.Cert != "/c.pem" || s.Key != "/k.pem" {
 		t.Fatalf("%+v", s)

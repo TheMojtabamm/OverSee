@@ -121,6 +121,38 @@ Fastly account**: their WebSocket idle timeouts, header handling in your configu
 their terms of service for proxying VPN traffic (check these yourself; a CDN can suspend an
 account). Tell the app's users to keep ordinary keep-alives on.
 
+## Checking your setup
+
+* `sudo oversee doctor` (also shown in the TUI Status tab) audits the mistakes that quietly
+  defeat the lock. The important one: **if Xray's inbound is reachable directly, nobody needs
+  the gate** — doctor reads the live listening sockets and fails if the upstream port is bound
+  to anything but loopback. It also flags: no app key, plain HTTP without a CDN, an expiring
+  or expired certificate, a CDN without `only-proxy`, stale CDN ranges, and a world-readable
+  `keys.txt`.
+* `sudo oversee cdn-test` asks the running gate, **through your public URL (so through the
+  CDN)**, what the request looked like on arrival: did the `X-Oversea-Auth` header arrive
+  intact on a normal request *and* on a WebSocket upgrade, and does the gate see the real
+  client IP from a trusted edge? It fails loudly if the CDN strips or rewrites the header.
+  The probe URL exists only for a few minutes during the test (one-time nonce) and never
+  echoes the token.
+
+## How long a tunnel can stay up
+
+The token's day comes from the phone's clock and Xray reuses the same header for every
+reconnect in a session. The gate accepts ±1 day by default. The app re-keys a running gated
+tunnel when you return to it on a new day; for tunnels left running for days in the
+background, widen the window: `oversee set token-days 3` (max 7). The cost is that a captured
+token stays replayable for `2·N+1` days — still only for that one lock. If users report
+"connects, then stops after a day or two", look at this and at the phone's date/time.
+
+## The end-to-end proof
+
+`tool/e2e_lockflow.sh` runs the real app code against real Xray and the real gate:
+an owner locks a gated file; a "bot" decodes it and gets the plain link; the app imports the
+same file; a thief re-locks the decoded config under their own identity. Result: the app with
+the owner's file connects; the decoded plain config is refused; the thief's re-locked copy is
+refused; after the owner removes the lock, even the app is refused.
+
 ## Limits
 * WebSocket / HTTPUpgrade only (one check per connection). Reality+TCP and XHTTP
   can't carry the header; the app refuses to lock them as gated.

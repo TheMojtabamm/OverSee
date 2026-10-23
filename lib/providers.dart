@@ -150,6 +150,19 @@ final tunnelStateProvider = StreamProvider<TunnelState>((ref) async* {
 /// Which saved config the user last asked to connect.
 final activeConfigIdProvider = StateProvider<String?>((ref) => null);
 
+/// The config the tunnel was started with (null when none / it was removed).
+final activeConfigProvider = Provider<VpnConfig?>((ref) {
+  final id = ref.watch(activeConfigIdProvider);
+  final list = ref.watch(configsProvider).valueOrNull ?? const <VpnConfig>[];
+  for (final c in list) {
+    if (c.id == id) return c;
+  }
+  return null;
+});
+
+/// UTC day of the gate token the running tunnel was started with (null = not gated).
+final tunnelTokenDayProvider = StateProvider<int?>((ref) => null);
+
 final identityStoreProvider = Provider<IdentityStore>((ref) => IdentityStore());
 
 class TrustedCreatorsNotifier extends AsyncNotifier<Set<String>> {

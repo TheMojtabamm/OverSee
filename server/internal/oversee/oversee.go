@@ -64,6 +64,9 @@ type Settings struct {
 	// origin that is hidden behind a CDN.
 	CDN       string
 	OnlyProxy bool
+
+	// TokenDays widens the accepted token-day window to ±TokenDays (default 1, max 7).
+	TokenDays int
 	Cert      string
 	Key       string
 }
@@ -92,6 +95,8 @@ func (p Paths) LoadSettings() Settings {
 			s.CDN = strings.TrimSpace(v)
 		case "ONLY_PROXY":
 			s.OnlyProxy = strings.TrimSpace(v) == "1" || strings.TrimSpace(v) == "true"
+		case "TOKEN_DAYS":
+			fmt.Sscanf(strings.TrimSpace(v), "%d", &s.TokenDays)
 		case "CERT":
 			s.Cert = strings.TrimSpace(v)
 		case "KEY":
@@ -111,8 +116,8 @@ func (p Paths) SaveSettings(s Settings) error {
 	if s.OnlyProxy {
 		op = "1"
 	}
-	body := fmt.Sprintf("# managed by `oversee`\nDOMAIN=%s\nUPSTREAM=%s\nPLAIN=%s\nLEAK_IPS=%d\nCDN=%s\nONLY_PROXY=%s\nCERT=%s\nKEY=%s\n",
-		s.Domain, s.Upstream, s.Plain, s.LeakIPs, s.CDN, op, s.Cert, s.Key)
+	body := fmt.Sprintf("# managed by `oversee`\nDOMAIN=%s\nUPSTREAM=%s\nPLAIN=%s\nLEAK_IPS=%d\nCDN=%s\nONLY_PROXY=%s\nCERT=%s\nKEY=%s\nTOKEN_DAYS=%d\n",
+		s.Domain, s.Upstream, s.Plain, s.LeakIPs, s.CDN, op, s.Cert, s.Key, s.TokenDays)
 	return writeAtomic(p.Conf, []byte(body), 0o640)
 }
 
@@ -447,12 +452,18 @@ func (p Paths) SetSetting(name, value string) error {
 			return errors.New("set a CDN first: oversee set cdn cloudflare")
 		}
 		s.OnlyProxy = on
+	case "token-days":
+		n := 0
+		if _, err := fmt.Sscanf(value, "%d", &n); err != nil || n < 1 || n > 7 {
+			return errors.New("token-days must be 1-7")
+		}
+		s.TokenDays = n
 	case "cert":
 		s.Cert = value
 	case "key":
 		s.Key = value
 	default:
-		return fmt.Errorf("unknown setting %q (domain, upstream, plain, leak-ips, cdn, only-proxy, cert, key)", name)
+		return fmt.Errorf("unknown setting %q (domain, upstream, plain, leak-ips, cdn, only-proxy, token-days, cert, key)", name)
 	}
 	if (s.Cert == "") != (s.Key == "") && (name == "cert" || name == "key") && value != "" {
 		// allowed transiently: the user sets one then the other; the gate refuses to start

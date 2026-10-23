@@ -7,6 +7,7 @@ import "../../providers.dart";
 import "../../ui/theme.dart";
 import "../add/add_screen.dart";
 import "../add/importer.dart";
+import "../configs/connect_flow.dart";
 import "../home/home_screen.dart";
 import "../onboarding/onboarding_screen.dart";
 import "../settings/settings_screen.dart";
@@ -17,12 +18,28 @@ class RootShell extends ConsumerStatefulWidget {
   ConsumerState<RootShell> createState() => _RootShellState();
 }
 
-class _RootShellState extends ConsumerState<RootShell> {
+class _RootShellState extends ConsumerState<RootShell>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // A file opened with / shared to Oversea (e.g. a .ovsea from Telegram).
     IncomingService.listen(_onIncoming);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Back in the foreground: re-key a gated tunnel whose token day has rolled over.
+    if (state == AppLifecycleState.resumed && mounted) {
+      reconnectIfStale(context, ref);
+    }
   }
 
   Future<void> _onIncoming(String text) async {

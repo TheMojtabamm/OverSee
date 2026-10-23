@@ -290,3 +290,38 @@ func TestProbeBruteForceIsLimited(t *testing.T) {
 		t.Fatalf("guessing the nonce must trip the limiter, got %d", resp.StatusCode)
 	}
 }
+
+func TestTokenSkewWindow(t *testing.T) {
+	for _, c := range []struct {
+		skew      int64
+		ageDays   int
+		wantValid bool
+	}{
+		{1, 1, true}, {1, 2, false}, {1, -1, true}, {1, -2, false},
+		{3, 3, true}, {3, 4, false}, {3, -3, true}, {3, -4, false},
+		{7, 7, true}, {7, 8, false},
+	} {
+		tok := Token(appKey, code, ownerFp, now.Add(-time.Duration(c.ageDays)*24*time.Hour))
+		r, _ := CheckSkew(tok, allow, appKeys, now, c.skew)
+		if (r == OK) != c.wantValid {
+			t.Errorf("skew ±%d, token %d days old: got %v want valid=%v", c.skew, c.ageDays, r, c.wantValid)
+		}
+	}
+	// the handler honours Options.SkewDays, and 0 means the default 1
+	up, _ := startUpstream(t)
+	for skew, wantStatus := range map[int]int{0: 404, 1: 404, 3: 200} {
+		g := httptest.NewServer(newWithClock(up, list, func() [][]byte { return appKeys },
+			Options{SkewDays: skew}, func() time.Time { return now }))
+		rq, _ := http.NewRequest("GET", g.URL+"/x", nil)
+		rq.Header.Set(Header, Token(appKey, code, ownerFp, now.Add(-72*time.Hour))) // 3 days old
+		resp, err := http.DefaultClient.Do(rq)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		g.Close()
+		if resp.StatusCode != wantStatus {
+			t.Errorf("SkewDays=%d: status %d want %d", skew, resp.StatusCode, wantStatus)
+		}
+	}
+}

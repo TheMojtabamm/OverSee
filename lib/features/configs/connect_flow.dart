@@ -45,7 +45,34 @@ Future<void> toggleConnection(
   await _connect(context, ref, c);
 }
 
-Future<void> _connect(BuildContext context, WidgetRef ref, VpnConfig c) async {
+/// The UTC day number the gate token is built from (same arithmetic as GateToken).
+int currentTokenDay([DateTime? now]) =>
+    (now ?? DateTime.now()).toUtc().millisecondsSinceEpoch ~/ 86400000;
+
+/// A gated tunnel keeps the header it was started with for every reconnect Xray makes, but
+/// the server only accepts a few days' worth of tokens. So when the app comes back to the
+/// foreground and the tunnel's token is from an earlier day, restart it quietly with a fresh
+/// one (no dialogs, no ad). Returns true if a restart was started.
+Future<bool> reconnectIfStale(BuildContext context, WidgetRef ref) async {
+  final st = ref.read(tunnelStateProvider).valueOrNull;
+  if (st?.phase != TunnelPhase.connected) return false;
+  final cfg = ref.read(activeConfigProvider);
+  final day = ref.read(tunnelTokenDayProvider);
+  if (cfg == null || !cfg.gated || day == null || day == currentTokenDay()) {
+    return false;
+  }
+  final svc = ref.read(tunnelServiceProvider);
+  await svc.stop();
+  await svc.states
+      .firstWhere((s) => s.phase == TunnelPhase.disconnected)
+      .timeout(const Duration(seconds: 5), onTimeout: () => TunnelState.idle);
+  if (!context.mounted) return false;
+  await _connect(context, ref, cfg, silent: true);
+  return true;
+}
+
+Future<void> _connect(BuildContext context, WidgetRef ref, VpnConfig c,
+    {bool silent = false}) async {
   final s = S.of(context);
   final messenger = ScaffoldMessenger.of(context);
   final svc = ref.read(tunnelServiceProvider);
@@ -57,7 +84,7 @@ Future<void> _connect(BuildContext context, WidgetRef ref, VpnConfig c) async {
   }
 
   // 1. Third-party (owner) message, clearly labelled.
-  if (c.locked) {
+  if (c.locked && !silent) {
     final ok = await _showSponsored(context, ref, c);
     if (!ok || !context.mounted) return;
   }
@@ -105,6 +132,8 @@ Future<void> _connect(BuildContext context, WidgetRef ref, VpnConfig c) async {
 
   // 5. Start and wait for the outcome.
   ref.read(activeConfigIdProvider.notifier).state = c.id;
+  ref.read(tunnelTokenDayProvider.notifier).state =
+      c.gated ? currentTokenDay() : null;
   final outcome = Completer<TunnelState>();
   final sub = svc.states.listen((st) {
     if (!outcome.isCompleted &&
@@ -141,7 +170,8 @@ Future<void> _connect(BuildContext context, WidgetRef ref, VpnConfig c) async {
     await sub.cancel();
   }
 
-  // 6. Tunnel is up: this is the natural break for an ad.
+  // 6. Tunnel is up: this is the natural break for an ad (never on a silent re-key).
+  if (silent) return;
   final first = !await store.firstConnectDone();
   await store.markFirstConnectDone();
   AdService.showAfterConnect(
