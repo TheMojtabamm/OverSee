@@ -1,0 +1,13 @@
+vless://11111111-2222-3333-4444-555555555555@example.com:443?encryption=none&security=tls&sni=example.com&fp=chrome&type=tcp&alpn=h2,http/1.1#vless-tls
+vless://11111111-2222-3333-4444-555555555555@reality.example.com:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.microsoft.com&fp=chrome&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sid=6ba85179e30d4fc2&spx=%2F&type=tcp#vless-reality-vision
+vless://11111111-2222-3333-4444-555555555555@cdn.example.com:443?encryption=none&security=tls&sni=cdn.example.com&type=ws&host=cdn.example.com&path=%2Fws%3Fed%3D2048#vless-ws
+vless://11111111-2222-3333-4444-555555555555@9.9.9.9:443?encryption=none&security=reality&sni=www.google.com&fp=firefox&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sid=ab&type=grpc&serviceName=svc&mode=multi#vless-grpc-reality
+vless://11111111-2222-3333-4444-555555555555@example.com:443?encryption=none&security=tls&sni=example.com&type=httpupgrade&path=%2Fhu&host=example.com#vless-httpupgrade
+vless://11111111-2222-3333-4444-555555555555@example.com:443?encryption=none&security=tls&sni=example.com&type=xhttp&path=%2Fx&mode=auto#vless-xhttp
+vless://11111111-2222-3333-4444-555555555555@[2001:db8::1]:443?encryption=none&security=tls&sni=example.com&type=tcp#vless-ipv6-tls
+vmess://eyJ2IjogIjIiLCAicHMiOiAidm0td3MiLCAiYWRkIjogImNkbi5leGFtcGxlLmNvbSIsICJwb3J0IjogIjQ0MyIsICJpZCI6ICIxMTExMTExMS0yMjIyLTMzMzMtNDQ0NC01NTU1NTU1NTU1NTUiLCAiYWlkIjogIjAiLCAic2N5IjogImF1dG8iLCAibmV0IjogIndzIiwgInR5cGUiOiAibm9uZSIsICJob3N0IjogImNkbi5leGFtcGxlLmNvbSIsICJwYXRoIjogIi93cyIsICJ0bHMiOiAidGxzIiwgInNuaSI6ICJjZG4uZXhhbXBsZS5jb20iLCAiZnAiOiAiY2hyb21lIn0=
+vmess://eyJ2IjogIjIiLCAicHMiOiAidm0tdGNwIiwgImFkZCI6ICIxLjIuMy40IiwgInBvcnQiOiA4MDgwLCAiaWQiOiAiMTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtNTU1NTU1NTU1NTU1IiwgImFpZCI6IDAsICJuZXQiOiAidGNwIiwgInR5cGUiOiAibm9uZSIsICJ0bHMiOiAiIn0=
+trojan://pa%24%24word@example.com:443?security=tls&sni=example.com&type=tcp#trojan
+trojan://password@example.com:443?security=tls&sni=example.com&type=ws&path=%2Ft&host=example.com#trojan-ws
+ss://YWVzLTI1Ni1nY206c2VjcmV0cGFzcw@5.6.7.8:8388#ss-sip002
+ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTpwd0Bzcy5leGFtcGxlLmNvbTo0NDM#ss-legacy
