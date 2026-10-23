@@ -41,6 +41,9 @@ Add one secret in **Settings → Secrets and variables → Actions**:
   each) that together form the lock secret. They are injected via `--dart-define`,
   XOR-masked and rejoined at runtime; never committed. Without them a build cannot
   lock or open `.ovsea` files.
+- `GATE_KEY` — the app key for the server gate (`docs/GATE.md`); also set on the server.
+- `PLAY_CERT_SHA256` (optional) — Play Console → App integrity → app signing certificate SHA-256 (hex, no colons). The app derives wrong keys if its signing certificate isn't in the accepted list.
+- `AD_BANNER_ID` (optional) — AdMob banner unit.
 - `AD_INTERSTITIAL_ID` (optional) — AdMob interstitial unit shown after connect.
   `ADMOB_APP_ID` (optional) — AdMob application id for the manifest. Both default
   to Google's public *test* ids, so unconfigured builds never serve real ads.

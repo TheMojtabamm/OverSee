@@ -13,6 +13,9 @@ channel link embedded in it.
 | 6 | Root + Frida on a real device | Read config from memory | Not preventable on-device | Make leaked config short-lived/revocable on the Xray panel |
 | 7 | Local file/backup reader | Read stored configs | **Blocked**: Keystore-backed secure storage, `allowBackup=false`, legacy plaintext migrated and wiped | — |
 | 8 | Network attacker | MITM of future API calls | Cert pinning (SPKI) client ready; fails closed in prod without pins | Enable when an API exists |
+| 10 | Anyone with the APK | Find the lock secret / gate key with `strings` | **Blocked for literals**: CI embeds `hex(secret XOR per-build mask)`; the plain value is absent from `libapp.so` (checked), bytes differ every build. Does not stop someone who runs/hooks the app | Native opener |
+| 11 | Repackaged / re-signed APK, debugger, Frida, Xposed | Run the app instrumented to read keys | **Raised cost**: signals are mixed into the key and gate token, so the wrong key is derived and the server refuses — no error message to patch out. A skilled attacker patches the signal collection | Native checks, commercial protector |
+| 12 | Scanner / brute-forcer hitting the gate | Guess tokens | **Blocked**: 20 bad tokens/min/IP → 10 min block; refusals are a plain 404 | — |
 | 9 | Log scraper | Config from logcat | Release logs off, config URIs redacted in debug, R8 strips `android.util.Log` | — |
 
 Principle: the app cannot keep a secret from its own device owner. Defence is

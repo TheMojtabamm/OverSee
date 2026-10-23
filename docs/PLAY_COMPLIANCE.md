@@ -32,6 +32,7 @@ notification. (If Google accepts `systemExempted` for your case, switch to it.)
 | Ads at natural breaks, not disruptive | ✅ only after the tunnel is *up*; never at launch, exit, disconnect or while connecting; re-checks the tunnel is still connected before showing |
 | Frequency cap | ✅ ≥ 5 min between ads and **none on the first-ever connect** (`AdService.mayShow`, unit-tested) |
 | No accidental clicks / misleading UI | ✅ stock AdMob interstitial; no custom close-button tricks |
+| Banner placement | ✅ adaptive banner under the list, margin from tappable rows, zero height until loaded, only after consent (`BannerAdBox`) |
 | Content rating | ✅ `maxAdContentRating = PG` |
 | Don't click your own ads / use test ads in dev | ✅ test unit unless `AD_INTERSTITIAL_ID` is injected at build time. Add your phone as an AdMob test device before QA |
 | Third-party "owner" ads inside locked files | ✅ labelled **Sponsored**, text sanitised & capped, link restricted to https Telegram (`AdContent`), user must tap Continue. Still third-party content: consider a report/block option and AdMob-only monetisation if Google objects |
