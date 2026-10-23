@@ -36,7 +36,9 @@ mkdir build && cp -r "$SRC"/. build/ && chmod -R u+w build && cd build
 # panels hand out), and other clients run them, so the app must too. The guard is removed here
 # and the app shows an explicit "Not encrypted" warning on such configs instead.
 XRAY_MOD="github.com/xtls/xray-core"
+go mod download "$XRAY_MOD"   # `go list -m` only knows the directory once it is downloaded
 XRAY_SRC="$(go list -m -f '{{.Dir}}' "$XRAY_MOD")"
+[ -d "$XRAY_SRC" ] || { echo "could not locate $XRAY_MOD"; exit 1; }
 rm -rf "$WORK/xray-core-patched"
 cp -r "$XRAY_SRC" "$WORK/xray-core-patched" && chmod -R u+w "$WORK/xray-core-patched"
 FUNC='func validateOutboundTransportSecurity(rawConfig interface{}, senderSettings *proxyman.SenderConfig) error {'
