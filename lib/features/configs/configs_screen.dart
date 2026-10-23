@@ -180,7 +180,7 @@ class _ConfigTile extends ConsumerWidget {
         title: Text(c.name.isNotEmpty ? c.name : (c.host ?? "?")),
         // Locked configs never reveal their server address.
         subtitle: Text(c.locked
-            ? "${c.protocol.label} • ${s.t("locked")}"
+            ? "${c.protocol.label} • ${s.t("locked")}${c.isExpired() ? " • ${s.t("expired")}" : ""}"
             : "${c.protocol.label} • ${c.host ?? "?"}"),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,

@@ -25,6 +25,7 @@ type Paths struct {
 	Dir   string // /etc/oversea
 	Allow string
 	Keys  string
+	Stats string
 	Conf  string
 	Certs string
 }
@@ -38,6 +39,7 @@ func DefaultPaths() Paths {
 		Dir:   dir,
 		Allow: filepath.Join(dir, "allow.txt"),
 		Keys:  filepath.Join(dir, "keys.txt"),
+		Stats: filepath.Join(dir, "stats.json"),
 		Conf:  filepath.Join(dir, "gate.conf"),
 		Certs: filepath.Join(dir, "certs"),
 	}
@@ -49,6 +51,7 @@ type Settings struct {
 	Domain   string // public domain for TLS (Let's Encrypt)
 	Upstream string // Xray inbound host:port
 	Plain    string // optional plain-HTTP listen address (testing / TLS elsewhere)
+	LeakIPs  int    // warn when one lock is used from more distinct IPs than this per day (0 = off)
 }
 
 func DefaultSettings() Settings { return Settings{Upstream: "127.0.0.1:10000"} }
@@ -71,6 +74,8 @@ func (p Paths) LoadSettings() Settings {
 			s.Upstream = strings.TrimSpace(v)
 		case "PLAIN":
 			s.Plain = strings.TrimSpace(v)
+		case "LEAK_IPS":
+			fmt.Sscanf(strings.TrimSpace(v), "%d", &s.LeakIPs)
 		}
 	}
 	return s
@@ -80,7 +85,7 @@ func (p Paths) SaveSettings(s Settings) error {
 	if err := os.MkdirAll(p.Dir, 0o750); err != nil {
 		return err
 	}
-	body := fmt.Sprintf("# managed by `oversee`\nDOMAIN=%s\nUPSTREAM=%s\nPLAIN=%s\n", s.Domain, s.Upstream, s.Plain)
+	body := fmt.Sprintf("# managed by `oversee`\nDOMAIN=%s\nUPSTREAM=%s\nPLAIN=%s\nLEAK_IPS=%d\n", s.Domain, s.Upstream, s.Plain, s.LeakIPs)
 	return writeAtomic(p.Conf, []byte(body), 0o640)
 }
 

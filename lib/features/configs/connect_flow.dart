@@ -51,6 +51,11 @@ Future<void> _connect(BuildContext context, WidgetRef ref, VpnConfig c) async {
   final svc = ref.read(tunnelServiceProvider);
   final store = ref.read(settingsStoreProvider);
 
+  if (c.isExpired()) {
+    messenger.showSnackBar(SnackBar(content: Text(s.t("file_expired"))));
+    return;
+  }
+
   // 1. Third-party (owner) message, clearly labelled.
   if (c.locked) {
     final ok = await _showSponsored(context, ref, c);

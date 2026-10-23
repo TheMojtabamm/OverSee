@@ -44,7 +44,7 @@ EOF
 echo "$CODE $OWNER_FP e2e" > "$W/allow.txt"
 # keys file: newest first; "old-key" stands in for a previous release
 printf '%s\n%s\n' "$KEY" "old-key" > "$W/keys.txt"
-"$W/oversee" gate -plain 127.0.0.1:8081 -upstream 127.0.0.1:10000 -allow "$W/allow.txt" -keys "$W/keys.txt" >"$W/gate.log" 2>&1 &
+OVERSEE_DIR="$W" "$W/oversee" gate -plain 127.0.0.1:8081 -upstream 127.0.0.1:10000 -allow "$W/allow.txt" -keys "$W/keys.txt" >"$W/gate.log" 2>&1 &
 
 # Client configs from the app's builder; swap the Android tun inbound for socks.
 mk() { # name, extra-args...
@@ -71,6 +71,18 @@ echo "thief (re-locked): ${C:0:60}"
 [[ "$A" == *$OK* ]] || { echo "FAIL: owner could not reach origin"; tail -n 5 "$W/gate.log"; exit 1; }
 [[ "$B" != *$OK* ]] || { echo "FAIL: client without token got through"; exit 1; }
 [[ "$C" != *$OK* ]] || { echo "FAIL: re-locked copy (other creator) got through"; exit 1; }
+
+# Live stats written by the gate (what the TUI shows): the owner's lock was used from
+# exactly 1 IP, and the refusals were counted. No raw IPs on disk.
+sleep 6
+python3 - "$W/stats.json" <<'PY'
+import json,sys
+sn=json.load(open(sys.argv[1]))
+assert len(sn["locks"])==1 and sn["locks"][0]["distinctIps"]==1 and sn["locks"][0]["accepted"]>=1, sn
+assert sum(sn["rejects"].values())>=1, sn
+assert "127.0.0.1" not in open(sys.argv[1]).read()
+print("stats ok:", sn["locks"][0], sn["rejects"])
+PY
 
 # Revocation: delete the line; the gate reloads within a few seconds.
 : > "$W/allow.txt"

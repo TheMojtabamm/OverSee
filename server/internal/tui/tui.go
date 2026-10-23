@@ -3,12 +3,16 @@ package tui
 
 import (
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"oversea/server/internal/gate"
 	"oversea/server/internal/oversee"
 )
 
@@ -55,6 +59,7 @@ const (
 	modeConfirmKeyDelete
 	modeEditDomain
 	modeEditUpstream
+	modeEditLeak
 )
 
 type Model struct {
@@ -68,6 +73,9 @@ type Model struct {
 	locks    []oversee.Lock
 	keys     []string
 	settings oversee.Settings
+	stats    map[string]gate.LockSnapshot
+	statsAge time.Duration
+	rejects  map[string]int
 	logs     string
 
 	sel      int // selection in Locks / Keys
@@ -95,6 +103,13 @@ func (m *Model) refresh() {
 	oversee.SortLocks(m.locks)
 	m.keys, _ = m.p.ListKeys()
 	m.settings = m.p.LoadSettings()
+	m.stats, m.rejects, m.statsAge = map[string]gate.LockSnapshot{}, nil, -1
+	if sn, err := gate.ReadSnapshot(m.p.Stats); err == nil {
+		for _, l := range sn.Locks {
+			m.stats[l.CodeID] = l
+		}
+		m.rejects, m.statsAge = sn.Rejects, time.Since(sn.Updated)
+	}
 	if m.sel >= m.listLen() {
 		m.sel = max(0, m.listLen()-1)
 	}
@@ -220,6 +235,11 @@ func (m Model) updateBrowse(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input.SetValue(m.settings.Upstream)
 			m.input.Placeholder = "127.0.0.1:10000"
 			m.input.Focus()
+		case "t":
+			m.mode = modeEditLeak
+			m.input.SetValue(fmt.Sprint(m.settings.LeakIPs))
+			m.input.Placeholder = "0 = off"
+			m.input.Focus()
 		case "g":
 			m.exUUID, m.exPath = oversee.NewUUID(), "/"+oversee.RandomHex(4)
 		}
@@ -307,12 +327,20 @@ func (m Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.say("key added as the current key (older ones still accepted until you remove them)", false)
-		case modeEditDomain, modeEditUpstream:
+		case modeEditDomain, modeEditUpstream, modeEditLeak:
 			s := m.settings
-			if m.mode == modeEditDomain {
+			switch m.mode {
+			case modeEditDomain:
 				s.Domain = val
-			} else {
+			case modeEditUpstream:
 				s.Upstream = val
+			default:
+				n, err := strconv.Atoi(val)
+				if err != nil || n < 0 {
+					m.say("enter a whole number, 0 turns the alert off", true)
+					return m, nil
+				}
+				s.LeakIPs = n
 			}
 			if err := m.p.SaveSettings(s); err != nil {
 				m.say(err.Error(), true)
@@ -362,7 +390,7 @@ func (m Model) View() string {
 
 	b.WriteString("\n")
 	switch m.mode {
-	case modeAddLock, modeAddKey, modeEditDomain, modeEditUpstream:
+	case modeAddLock, modeAddKey, modeEditDomain, modeEditUpstream, modeEditLeak:
 		b.WriteString("\n" + m.input.View() + "\n" + helpStyle.Render("enter save · esc cancel") + "\n")
 	case modeConfirmRevoke:
 		if m.sel < len(m.locks) {
@@ -393,7 +421,7 @@ func (m Model) help() string {
 	case tabKeys:
 		return "↑↓ select · n new · g generate · d remove · " + base
 	case tabSetup:
-		return "e domain · u upstream · g new example · " + base
+		return "e domain · u upstream · t leak alert · g new example · " + base
 	}
 	return base
 }
@@ -439,16 +467,54 @@ func (m Model) viewLocks() string {
 		return dimStyle.Render("No locks yet. In the app: Share → Lock → Server gate, then press ") + selStyle.Render("a") + dimStyle.Render(" and paste the line it shows.")
 	}
 	var lines []string
-	lines = append(lines, dimStyle.Render(fmt.Sprintf("  %-18s %-21s %s", "LOCK ID", "CREATOR", "NOTE")))
+	lines = append(lines, dimStyle.Render(fmt.Sprintf("  %-18s %-21s %7s %6s  %s", "LOCK ID", "CREATOR", "CONNS", "IPs", "NOTE")))
+	leaks := 0
 	for i, l := range m.locks {
 		cur := "  "
 		st := lipgloss.NewStyle()
 		if i == m.sel {
 			cur, st = "▸ ", selStyle
 		}
-		lines = append(lines, cur+st.Render(fmt.Sprintf("%-18s %-21s %s", l.CodeID, l.CreatorFp, l.Note)))
+		conns, ips := "-", "-"
+		leaked := false
+		if s, ok := m.stats[l.CodeID]; ok {
+			conns, ips = fmt.Sprint(s.Accepted), fmt.Sprint(s.DistinctIPs)
+			leaked = m.settings.LeakIPs > 0 && s.DistinctIPs > m.settings.LeakIPs
+		}
+		row := st.Render(fmt.Sprintf("%-18s %-21s %7s %6s  %s", l.CodeID, l.CreatorFp, conns, ips, l.Note))
+		if leaked {
+			leaks++
+			row += " " + badStyle.Render("⚠ shared?")
+		}
+		lines = append(lines, cur+row)
 	}
-	return boxStyle.Render(strings.Join(lines, "\n"))
+	out := boxStyle.Render(strings.Join(lines, "\n"))
+	switch {
+	case m.statsAge < 0:
+		out += "\n" + dimStyle.Render("no live stats yet (the gate writes them every few seconds while running)")
+	default:
+		out += "\n" + dimStyle.Render(fmt.Sprintf("today (UTC) · stats %ds old", int(m.statsAge.Seconds())))
+	}
+	if len(m.rejects) > 0 {
+		out += dimStyle.Render(" · refused: " + fmtRejects(m.rejects))
+	}
+	if leaks > 0 {
+		out += "\n" + badStyle.Render(fmt.Sprintf("%d lock(s) used from more than %d IPs today — if that's not your audience, revoke (d) and issue a new file.", leaks, m.settings.LeakIPs))
+	}
+	return out
+}
+
+func fmtRejects(r map[string]int) string {
+	keys := make([]string, 0, len(r))
+	for k := range r {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s %d", k, r[k]))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func (m Model) viewKeys() string {
@@ -481,12 +547,20 @@ func (m Model) viewSetup() string {
 	b.WriteString(boxStyle.Render(strings.Join([]string{
 		row("Domain", orDash(s.Domain)+dimStyle.Render("   e to edit")),
 		row("Upstream", s.Upstream+dimStyle.Render("   u to edit")),
+		row("Leak alert", leakText(s.LeakIPs)+dimStyle.Render("   t to edit")),
 	}, "\n")))
 	b.WriteString("\n\n" + headerStyle.Render("Xray inbound to put behind the gate") + dimStyle.Render("  (listens on loopback; the gate does TLS)") + "\n")
 	b.WriteString(boxStyle.Render(oversee.XrayInbound(port, m.exPath, m.exUUID)))
 	b.WriteString("\n\n" + headerStyle.Render("Matching client link") + dimStyle.Render("  (paste into the app, then lock it with “Server gate”)") + "\n")
 	b.WriteString(boxStyle.Render(oversee.ClientLink(s.Domain, m.exPath, m.exUUID, "my-server")))
 	return b.String()
+}
+
+func leakText(n int) string {
+	if n <= 0 {
+		return "off"
+	}
+	return fmt.Sprintf("warn above %d IPs/day per lock", n)
 }
 
 func row(k, v string) string {

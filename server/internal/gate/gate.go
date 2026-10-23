@@ -67,26 +67,48 @@ func Token(appKey []byte, code, fp string, t time.Time) string {
 	return CodeID(code) + "." + strconv.FormatInt(day, 10) + "." + mac(appKey, code, fp, day)
 }
 
-// Valid reports whether tok is correct for an allow-listed entry and any app key.
-func Valid(tok string, entries map[string]Entry, appKeys [][]byte, now time.Time) bool {
+// Result says why a token was accepted or refused (used for stats, never shown to
+// the client: every refusal looks like the same plain 404).
+type Result int
+
+const (
+	OK Result = iota
+	NoToken
+	BadFormat
+	UnknownCode
+	BadDay
+	BadMAC
+	NoKeys
+)
+
+func (r Result) String() string {
+	return [...]string{"ok", "no_token", "bad_format", "unknown_code", "bad_day", "bad_mac", "no_keys"}[r]
+}
+
+// Check validates tok against an allow-listed entry and any app key. It returns the
+// matching entry's code id on success.
+func Check(tok string, entries map[string]Entry, appKeys [][]byte, now time.Time) (Result, string) {
 	if len(appKeys) == 0 {
-		return false // no key configured: fail closed
+		return NoKeys, "" // no key configured: fail closed
+	}
+	if tok == "" {
+		return NoToken, ""
 	}
 	parts := strings.Split(tok, ".")
 	if len(parts) != 3 || len(parts[2]) != 64 {
-		return false
+		return BadFormat, ""
 	}
 	e, ok := entries[parts[0]]
 	if !ok {
-		return false
+		return UnknownCode, ""
 	}
 	day, err := strconv.ParseInt(parts[1], 10, 64)
 	if err != nil {
-		return false
+		return BadFormat, ""
 	}
 	cur := now.UTC().Unix() / bucketSeconds
 	if day < cur-1 || day > cur+1 {
-		return false
+		return BadDay, ""
 	}
 	good := false
 	for _, k := range appKeys { // no early exit: constant work per key
@@ -94,7 +116,16 @@ func Valid(tok string, entries map[string]Entry, appKeys [][]byte, now time.Time
 			good = true
 		}
 	}
-	return good
+	if !good {
+		return BadMAC, ""
+	}
+	return OK, parts[0]
+}
+
+// Valid reports whether tok is correct for an allow-listed entry and any app key.
+func Valid(tok string, entries map[string]Entry, appKeys [][]byte, now time.Time) bool {
+	r, _ := Check(tok, entries, appKeys, now)
+	return r == OK
 }
 
 // ParseAllowList reads lines of `<code> <creatorFp> [note…]`; `#` starts a comment.
@@ -176,13 +207,23 @@ func (a *AllowList) Watch(every time.Duration, onErr func(error)) {
 
 func (a *AllowList) Get() map[string]Entry { return *a.cur.Load() }
 
+// Options tune the handler. The zero value is valid (no limiter, no stats).
+type Options struct {
+	Limiter *Limiter
+	Stats   *Stats
+}
+
 // New returns a handler that forwards valid requests to upstream and answers
 // everything else with a plain 404, so a probe learns nothing about the service.
 func New(upstream *url.URL, entries func() map[string]Entry, appKeys func() [][]byte) http.Handler {
-	return newWithClock(upstream, entries, appKeys, time.Now)
+	return NewWithOptions(upstream, entries, appKeys, Options{})
 }
 
-func newWithClock(upstream *url.URL, entries func() map[string]Entry, appKeys func() [][]byte, now func() time.Time) http.Handler {
+func NewWithOptions(upstream *url.URL, entries func() map[string]Entry, appKeys func() [][]byte, o Options) http.Handler {
+	return newWithClock(upstream, entries, appKeys, o, time.Now)
+}
+
+func newWithClock(upstream *url.URL, entries func() map[string]Entry, appKeys func() [][]byte, o Options, now func() time.Time) http.Handler {
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(upstream)
@@ -191,9 +232,29 @@ func newWithClock(upstream *url.URL, entries func() map[string]Entry, appKeys fu
 		FlushInterval: -1, // stream immediately; never buffer a tunnel
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !Valid(r.Header.Get(Header), entries(), appKeys(), now()) {
+		ip := clientIP(r)
+		t := now()
+		if o.Limiter != nil && o.Limiter.Blocked(ip, t) {
+			// Already misbehaving: don't even spend CPU on the MAC.
+			if o.Stats != nil {
+				o.Stats.reject("blocked")
+			}
 			http.NotFound(w, r)
 			return
+		}
+		res, id := Check(r.Header.Get(Header), entries(), appKeys(), t)
+		if res != OK {
+			if o.Limiter != nil {
+				o.Limiter.Fail(ip, t)
+			}
+			if o.Stats != nil {
+				o.Stats.reject(res.String())
+			}
+			http.NotFound(w, r)
+			return
+		}
+		if o.Stats != nil {
+			o.Stats.accept(id, ip, t)
 		}
 		proxy.ServeHTTP(w, r)
 	})

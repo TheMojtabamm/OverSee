@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -158,5 +160,54 @@ func TestTabNavigationAndQuit(t *testing.T) {
 	}
 	if msg := cmd(); msg != (tea.QuitMsg{}) {
 		t.Fatalf("expected QuitMsg, got %T", msg)
+	}
+}
+
+func TestLocksShowLiveStatsAndLeakWarning(t *testing.T) {
+	m := newModel(t)
+	m.p.AddLock(code + " " + fp + " ch")
+	m.p.SaveSettings(oversee.Settings{Upstream: "127.0.0.1:10000", LeakIPs: 5})
+
+	st := gate.NewStats()
+	now := time.Now()
+	for i := 0; i < 9; i++ { // 9 distinct IPs > threshold 5
+		st.AcceptForTest(gate.CodeID(code), fmt.Sprintf("10.0.0.%d", i), now)
+	}
+	if err := st.WriteOnce(m.p.Stats); err != nil {
+		t.Fatal(err)
+	}
+	m.refresh()
+	m = send(m, "2")
+	v := m.View()
+	if !strings.Contains(v, "shared?") || !strings.Contains(v, "more than 5 IPs") {
+		t.Fatalf("leak warning missing:\n%s", v)
+	}
+
+	// below the threshold: no warning
+	m.p.SaveSettings(oversee.Settings{Upstream: "127.0.0.1:10000", LeakIPs: 50})
+	m.refresh()
+	if strings.Contains(m.View(), "shared?") {
+		t.Fatal("no warning expected under the threshold")
+	}
+	// alert off
+	m.p.SaveSettings(oversee.Settings{Upstream: "127.0.0.1:10000"})
+	m.refresh()
+	if strings.Contains(m.View(), "shared?") {
+		t.Fatal("alert off must not warn")
+	}
+}
+
+func TestLeakThresholdEditValidates(t *testing.T) {
+	m := newModel(t)
+	m = send(m, "4", "t")
+	m.input.SetValue("abc")
+	m = send(m, "enter")
+	if m.mode != modeEditLeak || !m.msgIsErr {
+		t.Fatal("non-number must stay in the input with an error")
+	}
+	m.input.SetValue("150")
+	m = send(m, "enter")
+	if m.p.LoadSettings().LeakIPs != 150 {
+		t.Fatal("not saved")
 	}
 }

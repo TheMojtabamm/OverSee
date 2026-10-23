@@ -62,7 +62,14 @@ func RunGate(p Paths, args []string) error {
 	if err != nil {
 		return fmt.Errorf("bad upstream: %w", err)
 	}
-	h := gate.New(up, al.Get, kf.Get)
+	// Probe resistance + leak signal: 20 bad tokens a minute from one IP blocks it for
+	// 10 minutes; per-lock distinct-IP counts go to stats.json for the TUI.
+	stats := gate.NewStats()
+	stats.WriteLoop(p.Stats, 5*time.Second)
+	h := gate.NewWithOptions(up, al.Get, kf.Get, gate.Options{
+		Limiter: gate.NewLimiter(20, time.Minute, 10*time.Minute),
+		Stats:   stats,
+	})
 	log.Printf("gate: %d lock(s), %d app key(s), upstream %s", len(al.Get()), len(kf.Get()), *upstream)
 
 	if *plain != "" {

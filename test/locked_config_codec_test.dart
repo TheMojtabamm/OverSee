@@ -9,6 +9,7 @@ import "package:oversea/domain/locked_config_codec.dart";
 //                --dart-define=LOCK_P3=cccccccccccccccc --dart-define=LOCK_P4=dddddddddddddddd
 void main() {
   signatureTests();
+  expiryTests();
   const cfg =
       "vless://11111111-2222-3333-4444-555555555555@example.com:443?security=tls#Test";
 
@@ -128,6 +129,36 @@ void signatureTests() {
           await CreatorIdentity.verify([1, 2, 3], sig.sublist(1), id.publicKey),
           isFalse);
       expect(await CreatorIdentity.verify([1, 2, 3], sig, [1, 2]), isFalse);
+    });
+  });
+}
+
+void expiryTests() {
+  const cfg =
+      "vless://11111111-2222-3333-4444-555555555555@example.com:443?security=tls#T";
+  group("file expiry", () {
+    test("expiry survives the round trip and is enforced", () async {
+      final id = await CreatorIdentity.generate();
+      final soon = DateTime.now().add(const Duration(hours: 2));
+      final env = await LockedConfigCodec.decodeConfig(
+          await LockedConfigCodec.encode(cfg, signer: id, expiresAt: soon));
+      expect(env.expiresAt!.difference(soon).inSeconds.abs() <= 1, isTrue);
+      expect(env.isExpired(), isFalse);
+      expect(env.isExpired(soon.add(const Duration(minutes: 1))), isTrue);
+      expect(env.creator,
+          id.fingerprint); // signature still verifies with expiry in it
+    });
+    test("no expiry means never", () async {
+      final env = await LockedConfigCodec.decodeConfig(
+          await LockedConfigCodec.encode(cfg));
+      expect(env.expiresAt, isNull);
+      expect(env.isExpired(DateTime.utc(2999)), isFalse);
+    });
+    test("an already-past expiry is expired immediately", () async {
+      final env = await LockedConfigCodec.decodeConfig(
+          await LockedConfigCodec.encode(cfg,
+              expiresAt: DateTime.now().subtract(const Duration(minutes: 1))));
+      expect(env.isExpired(), isTrue);
     });
   });
 }

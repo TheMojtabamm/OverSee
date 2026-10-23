@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -178,7 +179,7 @@ func startUpstream(t *testing.T) (*url.URL, chan http.Header) {
 
 func TestRejectsWithoutTokenAndLooksLikeA404(t *testing.T) {
 	up, seen := startUpstream(t)
-	g := httptest.NewServer(newWithClock(up, list, func() [][]byte { return appKeys }, func() time.Time { return now }))
+	g := httptest.NewServer(newWithClock(up, list, func() [][]byte { return appKeys }, Options{}, func() time.Time { return now }))
 	defer g.Close()
 
 	for _, hdr := range []string{"", "garbage", Token([]byte("wrong"), code, ownerFp, now), Token(appKey, code, thiefFp, now)} {
@@ -205,7 +206,7 @@ func TestRejectsWithoutTokenAndLooksLikeA404(t *testing.T) {
 
 func TestForwardsValidRequestAndStripsToken(t *testing.T) {
 	up, seen := startUpstream(t)
-	g := httptest.NewServer(newWithClock(up, list, func() [][]byte { return appKeys }, func() time.Time { return now }))
+	g := httptest.NewServer(newWithClock(up, list, func() [][]byte { return appKeys }, Options{}, func() time.Time { return now }))
 	defer g.Close()
 
 	req, _ := http.NewRequest("GET", g.URL+"/x", nil)
@@ -226,7 +227,7 @@ func TestForwardsValidRequestAndStripsToken(t *testing.T) {
 
 func TestWebSocketUpgradeAndStreaming(t *testing.T) {
 	up, _ := startUpstream(t)
-	g := httptest.NewServer(newWithClock(up, list, func() [][]byte { return appKeys }, func() time.Time { return now }))
+	g := httptest.NewServer(newWithClock(up, list, func() [][]byte { return appKeys }, Options{}, func() time.Time { return now }))
 	defer g.Close()
 
 	conn, err := net.Dial("tcp", strings.TrimPrefix(g.URL, "http://"))
@@ -260,5 +261,134 @@ func BenchmarkValid(b *testing.B) {
 	tok := Token(appKey, code, ownerFp, now)
 	for i := 0; i < b.N; i++ {
 		Valid(tok, allow, appKeys, now)
+	}
+}
+
+func TestCheckReasons(t *testing.T) {
+	good := Token(appKey, code, ownerFp, now)
+	cases := []struct {
+		tok  string
+		want Result
+	}{
+		{good, OK},
+		{"", NoToken},
+		{"x.y", BadFormat},
+		{Token(appKey, "ffffffffffffffffffffffffffffffff", ownerFp, now), UnknownCode},
+		{Token(appKey, code, ownerFp, now.Add(-72*time.Hour)), BadDay},
+		{Token(appKey, code, thiefFp, now), BadMAC},
+	}
+	for _, c := range cases {
+		if got, _ := Check(c.tok, allow, appKeys, now); got != c.want {
+			t.Errorf("%q: got %v want %v", c.tok, got, c.want)
+		}
+	}
+	if r, id := Check(good, allow, appKeys, now); r != OK || id != CodeID(code) {
+		t.Fatal(r, id)
+	}
+}
+
+func TestLimiterBlocksAfterRepeatedFailuresAndRecovers(t *testing.T) {
+	l := NewLimiter(3, time.Minute, 10*time.Minute)
+	ip := "203.0.113.9"
+	for i := 0; i < 2; i++ {
+		l.Fail(ip, now)
+		if l.Blocked(ip, now) {
+			t.Fatal("blocked too early")
+		}
+	}
+	l.Fail(ip, now)
+	if !l.Blocked(ip, now) {
+		t.Fatal("should be blocked after 3 failures")
+	}
+	if l.Blocked("198.51.100.1", now) {
+		t.Fatal("other IPs unaffected")
+	}
+	if !l.Blocked(ip, now.Add(9*time.Minute)) || l.Blocked(ip, now.Add(11*time.Minute)) {
+		t.Fatal("block must last exactly BlockFor")
+	}
+	// failures spread beyond the window never accumulate
+	l2 := NewLimiter(3, time.Minute, time.Hour)
+	for i := 0; i < 10; i++ {
+		l2.Fail(ip, now.Add(time.Duration(i)*2*time.Minute))
+	}
+	if l2.Blocked(ip, now.Add(30*time.Minute)) {
+		t.Fatal("slow failures must not trigger a block")
+	}
+}
+
+func TestHandlerLimiterStatsAndNeverBlocksALegitClientBehindFailures(t *testing.T) {
+	up, _ := startUpstream(t)
+	st := NewStats()
+	lim := NewLimiter(3, time.Minute, time.Hour)
+	g := httptest.NewServer(newWithClock(up, list, func() [][]byte { return appKeys }, Options{Limiter: lim, Stats: st}, func() time.Time { return now }))
+	defer g.Close()
+
+	get := func(tok string) int {
+		req, _ := http.NewRequest("GET", g.URL+"/x", nil)
+		if tok != "" {
+			req.Header.Set(Header, tok)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	good := Token(appKey, code, ownerFp, now)
+	if get(good) != 200 || get(good) != 200 {
+		t.Fatal("valid token must pass")
+	}
+	for i := 0; i < 3; i++ {
+		if get("bad") != 404 {
+			t.Fatal("bad token must 404")
+		}
+	}
+	// same IP is now blocked, even with a valid token (probing source), and still 404
+	if get(good) != 404 {
+		t.Fatal("blocked IP must be refused")
+	}
+	sn := st.Snapshot(now)
+	if len(sn.Locks) != 1 || sn.Locks[0].Accepted != 2 || sn.Locks[0].DistinctIPs != 1 {
+		t.Fatalf("%+v", sn.Locks)
+	}
+	if sn.Rejects["bad_format"] != 3 && sn.Rejects["bad_format"]+sn.Rejects["no_token"] != 3 {
+		t.Fatalf("%v", sn.Rejects)
+	}
+	if sn.Rejects["blocked"] != 1 {
+		t.Fatalf("%v", sn.Rejects)
+	}
+}
+
+func TestStatsDistinctIPsAndDayRollover(t *testing.T) {
+	st := NewStats()
+	for i := 0; i < 50; i++ {
+		st.accept("aaaa", "10.0.0."+itoa(i%10), now) // 10 distinct IPs, 50 connections
+	}
+	sn := st.Snapshot(now)
+	if sn.Locks[0].Accepted != 50 || sn.Locks[0].DistinctIPs != 10 {
+		t.Fatalf("%+v", sn.Locks[0])
+	}
+	if got := st.Snapshot(now.Add(25 * time.Hour)); len(got.Locks) != 0 {
+		t.Fatal("counters must reset each UTC day")
+	}
+}
+
+func itoa(i int) string { return strconv.Itoa(i) }
+
+func TestStatsFileDoesNotContainIPs(t *testing.T) {
+	st := NewStats()
+	st.accept("aaaa", "203.0.113.77", now)
+	path := t.TempDir() + "/stats.json"
+	if err := st.WriteOnce(path); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if strings.Contains(string(b), "203.0.113.77") {
+		t.Fatal("raw IPs must never be written to disk")
+	}
+	sn, err := ReadSnapshot(path)
+	if err != nil || len(sn.Locks) != 1 || sn.Locks[0].DistinctIPs != 1 {
+		t.Fatalf("%v %+v", err, sn)
 	}
 }

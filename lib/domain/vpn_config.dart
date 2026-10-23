@@ -80,6 +80,13 @@ class VpnConfig {
 
   bool get gated => gateCode != null;
 
+  /// When this (locked) config stops working; null = never.
+  final DateTime? expiresAt;
+
+  bool isExpired([DateTime? now]) =>
+      expiresAt != null &&
+      !(now ?? DateTime.now()).toUtc().isBefore(expiresAt!.toUtc());
+
   const VpnConfig({
     required this.id,
     required this.name,
@@ -94,6 +101,7 @@ class VpnConfig {
     this.locked = false,
     this.creator,
     this.gateCode,
+    this.expiresAt,
   });
 
   Map<String, dynamic> toJson() => {
@@ -110,6 +118,7 @@ class VpnConfig {
         "locked": locked,
         "creator": creator,
         "gateCode": gateCode,
+        "expiresAt": expiresAt?.toUtc().millisecondsSinceEpoch,
       };
 
   factory VpnConfig.fromJson(Map<String, dynamic> j) => VpnConfig(
@@ -129,6 +138,11 @@ class VpnConfig {
         locked: (j["locked"] as bool?) ?? false,
         creator: j["creator"] as String?,
         gateCode: j["gateCode"] as String?,
+        expiresAt: (j["expiresAt"] as num?) == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(
+                (j["expiresAt"] as num).toInt(),
+                isUtc: true),
       );
 
   VpnConfig copyWith({
@@ -145,6 +159,7 @@ class VpnConfig {
     bool? locked,
     String? creator,
     String? gateCode,
+    DateTime? expiresAt,
     bool clearHost = false,
   }) =>
       VpnConfig(
@@ -161,5 +176,6 @@ class VpnConfig {
         locked: locked ?? this.locked,
         creator: creator ?? this.creator,
         gateCode: gateCode ?? this.gateCode,
+        expiresAt: expiresAt ?? this.expiresAt,
       );
 }

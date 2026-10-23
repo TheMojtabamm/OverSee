@@ -40,6 +40,7 @@ class _ShareSheetState extends State<_ShareSheet> {
   bool _showQr = false;
   bool _busy = false;
   bool _gate = false;
+  Duration? _ttl = const Duration(days: 7);
   final _adCtrl = TextEditingController();
   final _tgCtrl = TextEditingController();
 
@@ -83,6 +84,7 @@ class _ShareSheetState extends State<_ShareSheet> {
           telegramUrl: tg,
           signer: identity,
           gateCode: gateCode,
+          expiresAt: _ttl == null ? null : DateTime.now().add(_ttl!),
         );
         String? line;
         if (gateCode != null) {
@@ -175,6 +177,30 @@ class _ShareSheetState extends State<_ShareSheet> {
               secondary: const Icon(Icons.lock, color: accent),
             ),
             if (_lock) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: DropdownButtonFormField<Duration?>(
+                  initialValue: _ttl,
+                  decoration: InputDecoration(
+                    labelText: s.t("expires"),
+                    border: const OutlineInputBorder(),
+                  ),
+                  items: [
+                    DropdownMenuItem(
+                        value: const Duration(hours: 24),
+                        child: Text(s.t("exp_1d"))),
+                    DropdownMenuItem(
+                        value: const Duration(days: 7),
+                        child: Text(s.t("exp_7d"))),
+                    DropdownMenuItem(
+                        value: const Duration(days: 30),
+                        child: Text(s.t("exp_30d"))),
+                    DropdownMenuItem(
+                        value: null, child: Text(s.t("exp_never"))),
+                  ],
+                  onChanged: (v) => setState(() => _ttl = v),
+                ),
+              ),
               if (GateToken.available)
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,

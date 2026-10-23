@@ -108,6 +108,13 @@ class S {
       "gate_allowlist": "Gate allow-list",
       "gate_allowlist_hint": "Lines for the locks you created",
       "gate_allowlist_empty": "You have not created any gated locks yet.",
+      "expires": "File expires",
+      "exp_1d": "In 24 hours",
+      "exp_7d": "In 7 days",
+      "exp_30d": "In 30 days",
+      "exp_never": "Never",
+      "file_expired": "This file has expired. Ask the owner for a new one.",
+      "expired": "Expired",
     },
     "fa": {
       "tab_configs": "کانفیگ‌ها",
@@ -200,6 +207,13 @@ class S {
       "gate_allowlist": "لیست‌سفید دروازه",
       "gate_allowlist_hint": "خط‌های قفل‌هایی که ساخته‌اید",
       "gate_allowlist_empty": "هنوز قفل دروازه‌دار نساخته‌اید.",
+      "expires": "انقضای فایل",
+      "exp_1d": "۲۴ ساعت دیگر",
+      "exp_7d": "۷ روز دیگر",
+      "exp_30d": "۳۰ روز دیگر",
+      "exp_never": "هرگز",
+      "file_expired": "این فایل منقضی شده است. از صاحبش فایل جدید بخواهید.",
+      "expired": "منقضی",
     },
   };
 }

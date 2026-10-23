@@ -120,7 +120,11 @@ class LockedConfigCodec {
     String? telegramUrl,
     CreatorIdentity? signer,
     String? gateCode,
+    DateTime? expiresAt,
   }) async {
+    final exp = expiresAt == null
+        ? null
+        : expiresAt.toUtc().millisecondsSinceEpoch ~/ 1000;
     final ad = (adText != null && adText.isNotEmpty) ? adText : null;
     final tg =
         (telegramUrl != null && telegramUrl.isNotEmpty) ? telegramUrl : null;
@@ -130,10 +134,11 @@ class LockedConfigCodec {
       if (tg != null) "t": tg,
       "g": keyGeneration,
       if (gateCode != null) "k": gateCode,
+      if (exp != null) "x": exp,
       if (signer != null) ...{
         "p": base64.encode(signer.publicKey),
-        "s": base64.encode(await signer.sign(
-            _signedBytes(plaintextConfig, ad, tg, keyGeneration, gateCode))),
+        "s": base64.encode(await signer.sign(_signedBytes(
+            plaintextConfig, ad, tg, keyGeneration, gateCode, exp))),
       },
     });
 
@@ -205,6 +210,7 @@ class LockedConfigCodec {
     final t = j["t"] as String?;
     final g = (j["g"] as num?)?.toInt() ?? 0;
     final k = j["k"] as String?;
+    final x = (j["x"] as num?)?.toInt();
 
     String? creator;
     final p = j["p"] as String?;
@@ -214,7 +220,7 @@ class LockedConfigCodec {
         final pub = base64.decode(p);
         final sig = base64.decode(sg);
         if (await CreatorIdentity.verify(
-            _signedBytes(c, a, t, g, k), sig, pub)) {
+            _signedBytes(c, a, t, g, k, x), sig, pub)) {
           creator = fingerprintOf(pub);
         }
       } catch (_) {
@@ -222,15 +228,27 @@ class LockedConfigCodec {
       }
     }
     return ConfigEnvelope(c,
-        adText: a, telegramUrl: t, creator: creator, gateCode: k);
+        adText: a,
+        telegramUrl: t,
+        creator: creator,
+        gateCode: k,
+        expiresAt: x == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(x * 1000, isUtc: true));
   }
 
   /// Canonical bytes the signature covers. A JSON array keeps field boundaries
   /// unambiguous (no "ab"+"c" vs "a"+"bc" confusion).
   static List<int> _signedBytes(
-          String c, String? a, String? t, int g, String? k) =>
-      utf8.encode(
-          "ovsea-sig-v1\n${jsonEncode([c, a ?? "", t ?? "", g, k ?? ""])}");
+          String c, String? a, String? t, int g, String? k, int? x) =>
+      utf8.encode("ovsea-sig-v1\n${jsonEncode([
+            c,
+            a ?? "",
+            t ?? "",
+            g,
+            k ?? "",
+            x ?? 0
+          ])}");
 
   /// Cheap check whether a string looks like one of our v3 locked blobs.
   static bool looksLocked(String s) {
@@ -264,6 +282,17 @@ class ConfigEnvelope {
 
   /// Secret per-lock code for a gated server (null = server is not gated).
   final String? gateCode;
+
+  /// When the file stops being usable (null = never). Covered by the signature.
+  final DateTime? expiresAt;
   const ConfigEnvelope(this.config,
-      {this.adText, this.telegramUrl, this.creator, this.gateCode});
+      {this.adText,
+      this.telegramUrl,
+      this.creator,
+      this.gateCode,
+      this.expiresAt});
+
+  bool isExpired([DateTime? now]) =>
+      expiresAt != null &&
+      !(now ?? DateTime.now()).toUtc().isBefore(expiresAt!);
 }

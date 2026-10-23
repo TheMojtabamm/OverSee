@@ -103,6 +103,10 @@ class _AddScreenState extends ConsumerState<AddScreen> {
       _say("Invalid or unsupported file", ok: false);
       return;
     }
+    if (env.isExpired()) {
+      _say(s.t("file_expired"), ok: false);
+      return;
+    }
     final parsed = ConfigParser.parseMany(env.config)
         .where((c) => c.protocol.isXray)
         .toList();
@@ -123,6 +127,7 @@ class _AddScreenState extends ConsumerState<AddScreen> {
               locked: true,
               creator: env.creator,
               gateCode: env.gateCode,
+              expiresAt: env.expiresAt,
             ))
         .toList();
     await ref.read(configsProvider.notifier).addAll(stored);

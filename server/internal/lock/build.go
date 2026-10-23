@@ -15,12 +15,12 @@ import (
 // public fields (for display) are readable without the key; the actual config
 // sits inside Ciphertext.
 type blobEnvelope struct {
-	V          int    `json:"v"`          // format version
+	V          int    `json:"v"` // format version
 	BlobID     string `json:"blobId"`
 	Protocol   string `json:"protocol"`
 	Title      string `json:"title"`
 	Host       string `json:"host,omitempty"`
-	Ciphertext string `json:"c"`          // base64 AES-GCM (nonce+tag+data)
+	Ciphertext string `json:"c"` // base64 AES-GCM (nonce+tag+data)
 }
 
 // BuildLockedBlob encrypts the raw config and returns the base64url locked blob
