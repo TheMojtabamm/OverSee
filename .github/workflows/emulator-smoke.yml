@@ -3,6 +3,9 @@ name: Emulator smoke test
 # Builds the release-configured app (R8, obfuscation, native lock core) for x86_64 and
 # launches it on an Android emulator. Fails with the crash log if it doesn't stay up.
 on:
+  push:
+    branches: [claude/amazing-ride-k1xeuk]
+    paths: ["tool/emulator_smoke.sh", ".github/workflows/emulator-smoke.yml"]
   workflow_dispatch:
     inputs:
       api:
@@ -50,7 +53,7 @@ jobs:
       - name: Launch on the emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: ${{ inputs.api }}
+          api-level: ${{ inputs.api || '36' }}
           arch: x86_64
           target: google_apis
           disable-animations: true
