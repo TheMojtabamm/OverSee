@@ -507,8 +507,11 @@ class XrayConfigBuilder {
           "fingerprint": (q["fp"] ?? "").isNotEmpty ? q["fp"] : "chrome",
           if ((q["alpn"] ?? "").isNotEmpty) "alpn": q["alpn"]!.split(","),
           if ((q["ech"] ?? "").isNotEmpty) "echConfigList": q["ech"],
-          if (q["allowInsecure"] == "1" || q["insecure"] == "1")
-            "allowInsecure": true,
+          // Xray removed "allowInsecure" (the core refuses to start with it); links carrying
+          // it start with normal verification. The replacements are certificate pinning
+          // (pcs) and a verification name (vcn).
+          if ((q["pcs"] ?? "").isNotEmpty) "pinnedPeerCertSha256": q["pcs"],
+          if ((q["vcn"] ?? "").isNotEmpty) "verifyPeerCertByName": q["vcn"],
         };
       case "reality":
         if ((q["pbk"] ?? "").isEmpty) {

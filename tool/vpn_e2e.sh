@@ -13,6 +13,7 @@ OUT=build/vpn_e2e; mkdir -p "$OUT"
 openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=e2e.test" \
   -keyout "$OUT/key.pem" -out "$OUT/cert.pem" >/dev/null 2>&1
 CERT="$PWD/$OUT/cert.pem"; KEY="$PWD/$OUT/key.pem"
+PIN=$(openssl x509 -in "$CERT" -outform der | sha256sum | cut -d" " -f1)
 
 cat > "$OUT/server.json" <<EOF
 {"log":{"loglevel":"warning"},
@@ -31,7 +32,7 @@ sleep 2
 
 link_for() {
   case "$1" in
-    ws) echo "vless://$UUID@10.0.2.2:8444?encryption=none&security=tls&sni=e2e.test&allowInsecure=1&type=ws&path=%2Fws&host=e2e.test" ;;
+    ws) echo "vless://$UUID@10.0.2.2:8444?encryption=none&security=tls&sni=e2e.test&pcs=$PIN&type=ws&path=%2Fws&host=e2e.test" ;;
     *)  echo "vless://$UUID@10.0.2.2:8443?encryption=none&security=none&type=tcp" ;;
   esac
 }
