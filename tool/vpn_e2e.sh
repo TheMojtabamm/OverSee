@@ -80,6 +80,8 @@ if [ "$UP" = 1 ]; then
   case "$D" in HTTP/1*) ;; *) echo "!! [$MODE] DNS/NAME TRAFFIC DOES NOT FLOW"; RESULT=1;; esac
 else
   echo "!! tunnel did not come up / UI never connected"; RESULT=1
+  echo "--- flutter test log (tail) ---"; tail -40 "$OUT/test-$MODE.log" 2>/dev/null
+  echo "--- xray/server log (tail) ---"; tail -15 "$OUT/server.log" 2>/dev/null
 fi
 
   wait $TEST; TRC=$?
