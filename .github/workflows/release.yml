@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag like v1.0 to build signed artifacts and publish a GitHub Release.
+# Push a tag like v1.0 to build the signed APK and publish a GitHub Release.
 #   git tag v1.0 && git push origin v1.0
 on:
   push:
@@ -155,24 +155,3 @@ jobs:
           files: ${{ env.APK_NAME }}
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-test') }}
-
-  windows:
-    if: ${{ github.ref_type == 'tag' }}
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.47.7"
-          channel: stable
-      - name: Generate Windows platform files
-        run: flutter create --platforms=windows --org com.oversea .
-      - run: flutter pub get
-      - name: Build Windows (release)
-        run: flutter build windows --release --dart-define=EXPECTED_CERTS=${{ env.EXPECTED_CERTS }} --dart-define=AD_INTERSTITIAL_ID=${{ secrets.AD_INTERSTITIAL_ID }} --dart-define=AD_BANNER_ID=${{ secrets.AD_BANNER_ID }}
-      - name: Package release folder
-        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath oversea-${{ github.ref_name }}-windows.zip
-      - name: Attach Windows build to the Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: oversea-${{ github.ref_name }}-windows.zip

@@ -58,7 +58,7 @@ Builds run on GitHub Actions; no local Flutter needed.
   It produces a signed APK as a downloadable artifact (kept 14 days). It uses Google's test
   ads and doesn't need AdMob IDs.
 - **Real release:** push a tag `v1.0`; the workflow builds the signed APK and publishes it as a
-  GitHub Release (plus a Windows zip). It **refuses to build** without real AdMob IDs.
+  GitHub Release. It **refuses to build** without real AdMob IDs.
 
 ### Repository secrets (Settings → Secrets and variables → Actions)
 
