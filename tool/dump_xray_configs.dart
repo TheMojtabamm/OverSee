@@ -17,6 +17,8 @@ void main(List<String> args) {
     "default": TunnelOptions(),
     "fragment": TunnelOptions(fragment: true),
     "ipv6": TunnelOptions(ipv6: true, bypassLan: false),
+    "plaindns": TunnelOptions(dohServers: []),
+    "probe": TunnelOptions(probe: ProbeEndpoint(24680, "u", "p")),
   };
 
   var n = 0;

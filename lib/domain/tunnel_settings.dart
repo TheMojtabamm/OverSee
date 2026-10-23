@@ -5,6 +5,9 @@ import "xray_config_builder.dart";
 enum SplitMode { all, allow, deny }
 
 enum DnsPreset {
+  /// No resolver inside the core: the phone's DNS queries (to 1.1.1.1 / 1.0.0.1) simply travel
+  /// through the tunnel like any other traffic. Fewest moving parts; the default.
+  tunnel([]),
   cloudflare(["https://1.1.1.1/dns-query", "https://1.0.0.1/dns-query"]),
   google(["https://8.8.8.8/dns-query", "https://8.8.4.4/dns-query"]),
   quad9(["https://9.9.9.9/dns-query", "https://149.112.112.112/dns-query"]);
@@ -24,7 +27,7 @@ class TunnelSettings {
   final List<String> apps;
 
   const TunnelSettings({
-    this.dns = DnsPreset.cloudflare,
+    this.dns = DnsPreset.tunnel,
     this.fragment = false,
     this.ipv6 = false,
     this.bypassLan = true,
@@ -60,7 +63,9 @@ class TunnelSettings {
       );
 
   String toJson() => jsonEncode({
-        "dns": dns.name,
+        // "dns2": the earlier "dns" key held a DoH choice that was the default; ignoring it once
+        // moves everyone to the plain-through-the-tunnel default (they can pick DoH again).
+        "dns2": dns.name,
         "fragment": fragment,
         "ipv6": ipv6,
         "bypassLan": bypassLan,
@@ -73,8 +78,8 @@ class TunnelSettings {
     try {
       final j = jsonDecode(s) as Map<String, dynamic>;
       return TunnelSettings(
-        dns: DnsPreset.values.firstWhere((e) => e.name == j["dns"],
-            orElse: () => DnsPreset.cloudflare),
+        dns: DnsPreset.values.firstWhere((e) => e.name == j["dns2"],
+            orElse: () => DnsPreset.tunnel),
         fragment: j["fragment"] == true,
         ipv6: j["ipv6"] == true,
         bypassLan: j["bypassLan"] != false,

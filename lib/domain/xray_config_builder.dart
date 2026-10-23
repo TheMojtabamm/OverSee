@@ -102,6 +102,10 @@ class XrayConfigBuilder {
           .cast<String, dynamic>()["dialerProxy"] = "fragment";
     }
 
+    // No DoH servers = "plain through the tunnel": the core has no resolver of its own for
+    // the phone's DNS, those queries are forwarded like any other traffic.
+    final plainDns = opts.dohServers.isEmpty;
+
     final dnsServers = <dynamic>[
       // The proxy server's own hostname cannot be looked up *through* the proxy
       // (chicken-and-egg), so it alone uses the system resolver.
@@ -110,7 +114,7 @@ class XrayConfigBuilder {
           "address": "localhost",
           "domains": ["full:$host"],
         },
-      ...opts.dohServers,
+      if (plainDns) "1.1.1.1" else ...opts.dohServers,
     ];
 
     final config = <String, dynamic>{
@@ -168,8 +172,9 @@ class XrayConfigBuilder {
       "routing": {
         "domainStrategy": "AsIs",
         "rules": [
-          // All DNS goes to Xray's resolver (DoH through the tunnel).
-          {"type": "field", "port": "53", "outboundTag": "dns-out"},
+          // All DNS goes to Xray's resolver (DoH through the tunnel), unless plain DNS was chosen.
+          if (!plainDns)
+            {"type": "field", "port": "53", "outboundTag": "dns-out"},
           if (opts.bypassLan)
             {"type": "field", "ip": _lan, "outboundTag": "direct"},
           if (!opts.ipv6)

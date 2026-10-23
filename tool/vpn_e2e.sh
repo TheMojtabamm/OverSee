@@ -32,41 +32,52 @@ adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS 2>/dev/null || tru
 ( while true; do adb shell appops set $PKG ACTIVATE_VPN allow >/dev/null 2>&1; sleep 3; done ) &
 KEEP=$!
 
+run_case() {
+  MODE="$1"
+  echo; echo "################ DNS mode: $MODE ################"
 adb logcat -c
 echo "== run the integration test =="
 flutter test integration_test/tunnel_e2e_test.dart -d emulator-5554 \
-  --dart-define=E2E_LINK="$LINK" > "$OUT/test.log" 2>&1 &
+  --dart-define=E2E_LINK="$LINK" --dart-define=E2E_DNS="$MODE" > "$OUT/test-$MODE.log" 2>&1 &
 TEST=$!
 
 for i in $(seq 1 120); do
-  grep -q "E2E_TUNNEL_UP" "$OUT/test.log" && break
+  grep -q "E2E_TUNNEL_UP" "$OUT/test-$MODE.log" && break
   kill -0 $TEST 2>/dev/null || break
   sleep 3
 done
 
-RESULT=0
-if grep -q "E2E_TUNNEL_UP" "$OUT/test.log"; then
+
+if grep -q "E2E_TUNNEL_UP" "$OUT/test-$MODE.log"; then
   echo "== tunnel is up; checking traffic from adb shell (goes through the VPN) =="
   sleep 3
   {
     echo "--- routes / VPN"; adb shell ip route; adb shell dumpsys connectivity | grep -iE "VPN|Active default" | head -8
-    echo "--- DNS + TCP through the tunnel: example.com:80"
-    adb shell "printf 'GET / HTTP/1.0\r\nHost: example.com\r\n\r\n' | nc -w 12 example.com 80 | head -n 1"
-    echo "--- raw IP, no DNS: 93.184.215.14:80 (example.com)"
-    adb shell "printf 'GET / HTTP/1.0\r\nHost: example.com\r\n\r\n' | nc -w 12 93.184.215.14 80 | head -n 1"
-  } > "$OUT/checks.txt" 2>&1
-  cat "$OUT/checks.txt"
-  grep -q "^HTTP/1" "$OUT/checks.txt" || { echo "!! NO INTERNET THROUGH THE TUNNEL"; RESULT=1; }
+  } > "$OUT/checks-$MODE.txt" 2>&1
+  D=$(adb shell "printf 'GET / HTTP/1.0\r\nHost: example.com\r\n\r\n' | nc -w 12 example.com 80 | head -n 1" 2>&1 | tr -d '\r')
+  I=$(adb shell "printf 'GET / HTTP/1.0\r\nHost: example.com\r\n\r\n' | nc -w 12 93.184.215.14 80 | head -n 1" 2>&1 | tr -d '\r')
+  cat "$OUT/checks-$MODE.txt"
+  echo "RESULT[$MODE] by name (needs DNS through the tunnel): ${D:-<nothing>}"
+  echo "RESULT[$MODE] by raw IP (no DNS):                     ${I:-<nothing>}"
+  case "$I" in HTTP/1*) ;; *) echo "!! [$MODE] RAW-IP TRAFFIC DOES NOT FLOW"; RESULT=1;; esac
+  case "$D" in HTTP/1*) ;; *) echo "!! [$MODE] DNS/NAME TRAFFIC DOES NOT FLOW"; RESULT=1;; esac
 else
   echo "!! tunnel did not come up / UI never connected"; RESULT=1
 fi
 
-wait $TEST; TRC=$?
+  wait $TEST; TRC=$?
+  adb logcat -d > "$OUT/logcat-$MODE.txt"
+  echo "== integration test output ($MODE) =="; grep -E "E2E_|Some tests failed|All tests passed|Expected|Actual|\[E\]" "$OUT/test-$MODE.log" | head -30
+  echo "== client core log ($MODE) =="
+  grep -iE "GoLog|xray|failed|error|dial|dns" "$OUT/logcat-$MODE.txt" | grep -viE "chromium|gms|vending" | tail -50
+  [ $TRC -ne 0 ] && RESULT=1
+  return 0
+}
+
+
+RESULT=0
+run_case doh
+run_case plain
 kill $KEEP $SERVER 2>/dev/null
-adb logcat -d > "$OUT/logcat.txt"
-echo "== integration test output =="; grep -E "E2E_|Some tests failed|All tests passed|Expected|Actual|\[E\]" "$OUT/test.log" | head -30
-echo "== xray (GoLog / errors from the client core) =="
-grep -iE "GoLog|xray|failed|error|dial|dns" "$OUT/logcat.txt" | grep -viE "chromium|gms|vending" | tail -60
 echo "== server log =="; tail -20 "$OUT/server.log"
-[ $TRC -ne 0 ] && RESULT=1
 exit $RESULT

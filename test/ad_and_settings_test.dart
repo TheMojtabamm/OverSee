@@ -98,6 +98,15 @@ void main() {
     test("corrupt json falls back to defaults", () {
       expect(TunnelSettings.fromJson("{not json").killSwitch, isTrue);
     });
+    test(
+        "defaults to plain DNS through the tunnel; the old DoH default is not kept",
+        () {
+      expect(const TunnelSettings().dns, DnsPreset.tunnel);
+      expect(TunnelSettings.fromJson('{"dns":"cloudflare"}').dns,
+          DnsPreset.tunnel);
+      expect(
+          TunnelSettings.fromJson('{"dns2":"google"}').dns, DnsPreset.google);
+    });
     test("DoH presets are IP-literal https URLs", () {
       for (final d in DnsPreset.values) {
         for (final u in d.urls) {

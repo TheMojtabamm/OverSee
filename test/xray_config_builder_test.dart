@@ -28,6 +28,7 @@ void main() {
       for (final o in const [
         TunnelOptions(),
         TunnelOptions(fragment: true),
+        TunnelOptions(dohServers: []),
         TunnelOptions(ipv6: true, bypassLan: false),
       ]) {
         expect(() => XrayConfigBuilder.build(l, o), returnsNormally, reason: l);
@@ -158,5 +159,15 @@ void main() {
         ((probe["settings"] as Map<String, dynamic>)["accounts"] as List)
             .single,
         {"user": "u", "pass": "p"});
+  });
+
+  test("plain DNS: no resolver rule, DNS queries travel through the proxy", () {
+    final c =
+        XrayConfigBuilder.buildMap(vless, const TunnelOptions(dohServers: []));
+    expect(
+        rules(c).where((r) => (r as Map)["outboundTag"] == "dns-out"), isEmpty);
+    expect((c["dns"] as Map<String, dynamic>)["servers"], contains("1.1.1.1"));
+    // DoH mode keeps the rule
+    expect((rules(build(vless)).first as Map)["outboundTag"], "dns-out");
   });
 }

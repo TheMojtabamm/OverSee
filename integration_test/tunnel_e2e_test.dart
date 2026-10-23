@@ -14,6 +14,8 @@ import "package:oversea/domain/tunnel_settings.dart";
 import "package:oversea/domain/xray_config_builder.dart";
 
 const _link = String.fromEnvironment("E2E_LINK");
+// "plain" = phone DNS goes through the tunnel as ordinary traffic; "doh" = resolver inside the core.
+const _dns = String.fromEnvironment("E2E_DNS", defaultValue: "plain");
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -28,7 +30,17 @@ void main() {
     final r = Random.secure();
     final probe = ProbeEndpoint(20000 + r.nextInt(30000), "e2e", "e2e-pass-1");
     final json = XrayConfigBuilder.build(
-        _link, TunnelOptions(probe: probe, logLevel: "info"));
+        _link,
+        TunnelOptions(
+          probe: probe,
+          logLevel: "info",
+          dohServers: _dns == "plain"
+              ? const []
+              : const [
+                  "https://1.1.1.1/dns-query",
+                  "https://8.8.8.8/dns-query"
+                ],
+        ));
 
     final seen = <TunnelPhase>[];
     final connected = Completer<void>();
@@ -44,7 +56,7 @@ void main() {
     await connected.future.timeout(const Duration(seconds: 30),
         onTimeout: () => fail("UI never received 'connected'; saw $seen"));
     // ignore: avoid_print
-    print("E2E_TUNNEL_UP");
+    print("E2E_TUNNEL_UP dns=$_dns");
 
     // The app itself is excluded from the VPN, so check the client->server leg through the
     // probe proxy (it exits through the same outbound the tunnel uses).

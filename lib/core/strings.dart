@@ -71,7 +71,8 @@ class S {
           "Oversea uses Android's VPN service to route your device's internet traffic through the server in the config you choose. Your traffic is encrypted between your phone and that server.\n\nOversea does not record, store or sell your browsing activity. The server you pick is run by the config's owner, so only connect to servers you trust.\n\nThe app shows ads (Google AdMob), which may use your advertising ID if you consent.",
       "agree": "Agree & continue",
       "dns": "Private DNS (DoH)",
-      "dns_hint": "Lookups are sent through the tunnel.",
+      "dns_hint":
+          "Lookups always go through the tunnel. DoH encrypts them inside it.",
       "fragment": "TLS fragmentation",
       "fragment_hint": "Helps on networks that filter by SNI.",
       "ipv6": "IPv6",
