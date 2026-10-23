@@ -1,8 +1,6 @@
 package gate
 
 import (
-	"net"
-	"net/http"
 	"sync"
 	"time"
 )
@@ -59,14 +57,4 @@ func (l *Limiter) Fail(ip string, now time.Time) {
 		b.blockedUntil = now.Add(l.BlockFor)
 		b.fails, b.windowStart = 0, now
 	}
-}
-
-// clientIP is the TCP peer. The gate is the public edge; if you put a CDN in front,
-// everyone shares the CDN's IP and the limiter/stats lose meaning (documented).
-func clientIP(r *http.Request) string {
-	h, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return h
 }

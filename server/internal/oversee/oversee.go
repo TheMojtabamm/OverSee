@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"oversea/server/internal/gate"
 )
@@ -22,12 +23,13 @@ const ServiceName = "oversee-gate"
 
 // Paths of everything the tool reads and writes.
 type Paths struct {
-	Dir   string // /etc/oversea
-	Allow string
-	Keys  string
-	Stats string
-	Conf  string
-	Certs string
+	Dir     string // /etc/oversea
+	Allow   string
+	Keys    string
+	Stats   string
+	Proxies string // CDN IP ranges (proxies.txt)
+	Conf    string
+	Certs   string
 }
 
 func DefaultPaths() Paths {
@@ -36,12 +38,13 @@ func DefaultPaths() Paths {
 		dir = "/etc/oversea"
 	}
 	return Paths{
-		Dir:   dir,
-		Allow: filepath.Join(dir, "allow.txt"),
-		Keys:  filepath.Join(dir, "keys.txt"),
-		Stats: filepath.Join(dir, "stats.json"),
-		Conf:  filepath.Join(dir, "gate.conf"),
-		Certs: filepath.Join(dir, "certs"),
+		Dir:     dir,
+		Allow:   filepath.Join(dir, "allow.txt"),
+		Keys:    filepath.Join(dir, "keys.txt"),
+		Stats:   filepath.Join(dir, "stats.json"),
+		Proxies: filepath.Join(dir, "proxies.txt"),
+		Conf:    filepath.Join(dir, "gate.conf"),
+		Certs:   filepath.Join(dir, "certs"),
 	}
 }
 
@@ -52,6 +55,15 @@ type Settings struct {
 	Upstream string // Xray inbound host:port
 	Plain    string // optional plain-HTTP listen address (testing / TLS elsewhere)
 	LeakIPs  int    // warn when one lock is used from more distinct IPs than this per day (0 = off)
+
+	// CDN fronting. CDN is "", "cloudflare", "fastly" or "generic". OnlyProxy refuses any
+	// connection that did not come through the CDN. Cert/Key serve TLS from files (e.g. a
+	// Cloudflare Origin CA certificate) instead of Let's Encrypt, which can't validate an
+	// origin that is hidden behind a CDN.
+	CDN       string
+	OnlyProxy bool
+	Cert      string
+	Key       string
 }
 
 func DefaultSettings() Settings { return Settings{Upstream: "127.0.0.1:10000"} }
@@ -74,6 +86,14 @@ func (p Paths) LoadSettings() Settings {
 			s.Upstream = strings.TrimSpace(v)
 		case "PLAIN":
 			s.Plain = strings.TrimSpace(v)
+		case "CDN":
+			s.CDN = strings.TrimSpace(v)
+		case "ONLY_PROXY":
+			s.OnlyProxy = strings.TrimSpace(v) == "1" || strings.TrimSpace(v) == "true"
+		case "CERT":
+			s.Cert = strings.TrimSpace(v)
+		case "KEY":
+			s.Key = strings.TrimSpace(v)
 		case "LEAK_IPS":
 			fmt.Sscanf(strings.TrimSpace(v), "%d", &s.LeakIPs)
 		}
@@ -85,7 +105,12 @@ func (p Paths) SaveSettings(s Settings) error {
 	if err := os.MkdirAll(p.Dir, 0o750); err != nil {
 		return err
 	}
-	body := fmt.Sprintf("# managed by `oversee`\nDOMAIN=%s\nUPSTREAM=%s\nPLAIN=%s\nLEAK_IPS=%d\n", s.Domain, s.Upstream, s.Plain, s.LeakIPs)
+	op := "0"
+	if s.OnlyProxy {
+		op = "1"
+	}
+	body := fmt.Sprintf("# managed by `oversee`\nDOMAIN=%s\nUPSTREAM=%s\nPLAIN=%s\nLEAK_IPS=%d\nCDN=%s\nONLY_PROXY=%s\nCERT=%s\nKEY=%s\n",
+		s.Domain, s.Upstream, s.Plain, s.LeakIPs, s.CDN, op, s.Cert, s.Key)
 	return writeAtomic(p.Conf, []byte(body), 0o640)
 }
 
@@ -373,4 +398,63 @@ func SortLocks(l []Lock) {
 		}
 		return l[i].CodeID < l[j].CodeID
 	})
+}
+
+func statFile(path string) (time.Time, error) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return st.ModTime(), nil
+}
+
+// SetSetting changes one gate.conf value by its CLI name (`oversee set <name> <value>`).
+func (p Paths) SetSetting(name, value string) error {
+	s := p.LoadSettings()
+	value = strings.TrimSpace(value)
+	switch name {
+	case "domain":
+		s.Domain = value
+	case "upstream":
+		if !strings.Contains(value, ":") {
+			return errors.New("upstream must be host:port, e.g. 127.0.0.1:10000")
+		}
+		s.Upstream = value
+	case "plain":
+		s.Plain = value
+	case "leak-ips":
+		n := 0
+		if _, err := fmt.Sscanf(value, "%d", &n); err != nil || n < 0 {
+			return errors.New("leak-ips must be a whole number (0 = off)")
+		}
+		s.LeakIPs = n
+	case "cdn":
+		if !ValidCDN(value) {
+			return errors.New("cdn must be none, cloudflare, fastly or generic")
+		}
+		if value == "none" {
+			value = ""
+		}
+		s.CDN = value
+		if value == "" {
+			s.OnlyProxy = false
+		}
+	case "only-proxy":
+		on := value == "1" || value == "true" || value == "on" || value == "yes"
+		if on && s.CDN == "" {
+			return errors.New("set a CDN first: oversee set cdn cloudflare")
+		}
+		s.OnlyProxy = on
+	case "cert":
+		s.Cert = value
+	case "key":
+		s.Key = value
+	default:
+		return fmt.Errorf("unknown setting %q (domain, upstream, plain, leak-ips, cdn, only-proxy, cert, key)", name)
+	}
+	if (s.Cert == "") != (s.Key == "") && (name == "cert" || name == "key") && value != "" {
+		// allowed transiently: the user sets one then the other; the gate refuses to start
+		// with only one of them and says why.
+	}
+	return p.SaveSettings(s)
 }

@@ -81,6 +81,8 @@ jobs:
         working-directory: tool/validate_xray_config
         run: GOFLAGS=-mod=mod go build -o "$RUNNER_TEMP/xray" github.com/xtls/xray-core/main
       - run: XRAY="$RUNNER_TEMP/xray" tool/e2e_gate.sh
+      # Same, but with a fake CDN edge in front and the gate in -cdn/-only-proxy mode.
+      - run: XRAY="$RUNNER_TEMP/xray" tool/e2e_cdn.sh
 
   server:
     runs-on: ubuntu-latest

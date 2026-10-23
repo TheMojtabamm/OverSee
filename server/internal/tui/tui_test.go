@@ -211,3 +211,27 @@ func TestLeakThresholdEditValidates(t *testing.T) {
 		t.Fatal("not saved")
 	}
 }
+
+func TestSetupCDNControls(t *testing.T) {
+	m := newModel(t)
+	m = send(m, "4")
+	if !strings.Contains(m.View(), "CDN fronting") || !strings.Contains(m.View(), "none (clients connect directly)") {
+		t.Fatalf("default view:\n%s", m.View())
+	}
+	m = send(m, "o") // only-CDN without a CDN must be refused with a hint
+	if !m.msgIsErr || m.p.LoadSettings().OnlyProxy {
+		t.Fatal("only-CDN needs a CDN first")
+	}
+	m = send(m, "c") // cloudflare
+	if m.p.LoadSettings().CDN != "cloudflare" || !strings.Contains(m.View(), "cloudflare") {
+		t.Fatalf("%+v", m.p.LoadSettings())
+	}
+	m = send(m, "o")
+	if !m.p.LoadSettings().OnlyProxy || !strings.Contains(m.View(), "only-CDN on") {
+		t.Fatal("only-CDN should be on")
+	}
+	m = send(m, "c", "c", "c") // fastly, generic, back to none
+	if s := m.p.LoadSettings(); s.CDN != "" || s.OnlyProxy {
+		t.Fatalf("cycling back to none must also switch only-CDN off: %+v", s)
+	}
+}

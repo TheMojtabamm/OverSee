@@ -211,6 +211,13 @@ func (a *AllowList) Get() map[string]Entry { return *a.cur.Load() }
 type Options struct {
 	Limiter *Limiter
 	Stats   *Stats
+
+	// Behind a CDN: which networks may speak for a client, which header carries the real
+	// IP, and whether to refuse connections that did NOT come through the CDN (so the
+	// origin can't be reached around it).
+	Proxies   *TrustedProxies
+	Provider  Provider
+	OnlyProxy bool
 }
 
 // New returns a handler that forwards valid requests to upstream and answers
@@ -232,8 +239,16 @@ func newWithClock(upstream *url.URL, entries func() map[string]Entry, appKeys fu
 		FlushInterval: -1, // stream immediately; never buffer a tunnel
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := clientIP(r)
+		ip, viaProxy := ResolveClientIP(r, o.Proxies, o.Provider)
 		t := now()
+		if o.OnlyProxy && !viaProxy {
+			// A direct connection to the origin: refuse it exactly like a bad token.
+			if o.Stats != nil {
+				o.Stats.reject("not_via_cdn")
+			}
+			http.NotFound(w, r)
+			return
+		}
 		if o.Limiter != nil && o.Limiter.Blocked(ip, t) {
 			// Already misbehaving: don't even spend CPU on the MAC.
 			if o.Stats != nil {

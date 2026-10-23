@@ -12,9 +12,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"oversea/server/internal/oversee"
 	"oversea/server/internal/tui"
@@ -83,6 +85,40 @@ func main() {
 		s := p.LoadSettings()
 		fmt.Printf("service: %s (boot: %s)\ndomain:  %s\nupstream: %s\nlocks:   %d\napp keys: %d\n",
 			st.Active, st.Enabled, dash(s.Domain), s.Upstream, len(locks), len(keys))
+	case "set":
+		need(args, 3, "oversee set <domain|upstream|plain|leak-ips|cdn|only-proxy|cert|key> <value>")
+		check(p.SetSetting(args[1], args[2]))
+		fmt.Printf("%s saved — restart the gate to apply (sudo systemctl restart oversee-gate)\n", args[1])
+	case "proxies":
+		sub := "show"
+		if len(args) > 1 {
+			sub = args[1]
+		}
+		switch sub {
+		case "update":
+			prov := p.LoadSettings().CDN
+			if len(args) > 2 {
+				prov = args[2]
+			}
+			if prov != "cloudflare" && prov != "fastly" {
+				fatal(fmt.Errorf("pick a CDN: oversee proxies update cloudflare|fastly (or set it in Setup)"))
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			n, err := p.UpdateProxies(ctx, prov, nil)
+			check(err)
+			fmt.Printf("%s: %d ranges written to %s (the running gate picks them up within seconds)\n", prov, n, p.Proxies)
+		case "show":
+			i := p.ProxyInfo()
+			s := p.LoadSettings()
+			if i.Age < 0 {
+				fmt.Printf("cdn: %s  | no proxies.txt yet\n", dash(s.CDN))
+			} else {
+				fmt.Printf("cdn: %s  | %d ranges | updated %s ago | only-proxy: %v\n", dash(s.CDN), i.Count, i.Age.Round(time.Minute), s.OnlyProxy)
+			}
+		default:
+			fatal(fmt.Errorf("unknown: proxies %s", sub))
+		}
 	case "version", "-v", "--version":
 		fmt.Println("oversee", version)
 	case "help", "-h", "--help":
@@ -103,6 +139,9 @@ oversee — manage the Oversea gate
   oversee revoke <id>     revoke a lock (id or code, at least 4 characters)
   oversee keys            list app keys (masked)
   oversee key add <key>   make <key> the current app key
+  oversee set <name> <v>  change a setting (domain, upstream, cdn, only-proxy, cert, key, …)
+  oversee proxies update  refresh the CDN's IP ranges (cloudflare|fastly)
+  oversee proxies         show the CDN mode and range count
   oversee status          service state and counts
   oversee version
 `

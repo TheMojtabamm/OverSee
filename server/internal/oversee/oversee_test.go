@@ -161,7 +161,8 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if s := p.LoadSettings(); s.Upstream != "127.0.0.1:10000" || s.Domain != "" {
 		t.Fatalf("%+v", s)
 	}
-	want := Settings{Domain: "vpn.example.com", Upstream: "127.0.0.1:12345"}
+	want := Settings{Domain: "vpn.example.com", Upstream: "127.0.0.1:12345", LeakIPs: 7,
+		CDN: "cloudflare", OnlyProxy: true, Cert: "/etc/oversea/origin.pem", Key: "/etc/oversea/origin.key"}
 	if err := p.SaveSettings(want); err != nil {
 		t.Fatal(err)
 	}
@@ -188,3 +189,31 @@ func TestMaskAndSnippet(t *testing.T) {
 }
 
 func newScanner(f *os.File) *bufio.Scanner { return bufio.NewScanner(f) }
+
+func TestSetSetting(t *testing.T) {
+	p := paths(t)
+	for name, v := range map[string]string{"domain": "vpn.example.com", "upstream": "127.0.0.1:12000", "leak-ips": "40", "cdn": "cloudflare", "cert": "/c.pem", "key": "/k.pem"} {
+		if err := p.SetSetting(name, v); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	if err := p.SetSetting("only-proxy", "on"); err != nil {
+		t.Fatal(err)
+	}
+	s := p.LoadSettings()
+	if s.Domain != "vpn.example.com" || s.Upstream != "127.0.0.1:12000" || s.LeakIPs != 40 || s.CDN != "cloudflare" || !s.OnlyProxy || s.Cert != "/c.pem" || s.Key != "/k.pem" {
+		t.Fatalf("%+v", s)
+	}
+	// turning the CDN off also turns only-proxy off (it would refuse everyone otherwise)
+	if err := p.SetSetting("cdn", "none"); err != nil {
+		t.Fatal(err)
+	}
+	if s := p.LoadSettings(); s.CDN != "" || s.OnlyProxy {
+		t.Fatalf("%+v", s)
+	}
+	for _, bad := range [][2]string{{"cdn", "akamai"}, {"leak-ips", "-3"}, {"leak-ips", "x"}, {"upstream", "nohostport"}, {"only-proxy", "on"}, {"colour", "red"}} {
+		if p.SetSetting(bad[0], bad[1]) == nil {
+			t.Errorf("should reject %v", bad)
+		}
+	}
+}

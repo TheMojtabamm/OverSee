@@ -15,7 +15,8 @@ channel link embedded in it.
 | 8 | Network attacker | MITM of future API calls | Cert pinning (SPKI) client ready; fails closed in prod without pins | Enable when an API exists |
 | 10 | Anyone with the APK | Find the lock secret / gate key with `strings` | **Blocked for literals**: the secrets exist only in `libovs.so` as `hex(secret XOR per-build mask)`; the Dart snapshot holds none, and CI fails the build if a plain secret appears in any native lib (`tool/verify_apk_secrets.sh`). Someone who disassembles `libovs.so` or hooks `ovs_derive_file_key` still gets the key/files | Commercial protector, white-box |
 | 11 | Repackaged / re-signed APK, debugger, Frida, Xposed | Run the app instrumented to read keys | **Raised cost**: signals are mixed into the key and gate token, so the wrong key is derived and the server refuses — no error message to patch out. A skilled attacker patches the signal collection | Native checks, commercial protector |
-| 12 | Scanner / brute-forcer hitting the gate | Guess tokens | **Blocked**: 20 bad tokens/min/IP → 10 min block; refusals are a plain 404 | — |
+| 12 | Scanner / brute-forcer hitting the gate | Guess tokens | **Blocked**: 20 bad tokens/min per *real* client IP → 10 min block; refusals are a plain 404. Behind a CDN the real IP comes from the CDN header, trusted only from the CDN's ranges (no spoofing, no blocking of a shared edge) | — |
+| 13 | Someone who finds the origin IP behind a CDN | Bypass the CDN / probe the gate directly | **Blocked** with `only-proxy`: non-CDN peers get the same 404 | — |
 | 9 | Log scraper | Config from logcat | Release logs off, config URIs redacted in debug, R8 strips `android.util.Log` | — |
 
 Principle: the app cannot keep a secret from its own device owner. Defence is

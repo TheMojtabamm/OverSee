@@ -235,6 +235,33 @@ func (m Model) updateBrowse(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input.SetValue(m.settings.Upstream)
 			m.input.Placeholder = "127.0.0.1:10000"
 			m.input.Focus()
+		case "c":
+			st := m.settings
+			st.CDN = oversee.NextCDN(st.CDN)
+			if st.CDN == "" {
+				st.OnlyProxy = false // can't refuse non-CDN traffic without a CDN
+			}
+			if err := m.p.SaveSettings(st); err != nil {
+				m.say(err.Error(), true)
+			} else if st.CDN == "cloudflare" || st.CDN == "fastly" {
+				m.say("CDN: "+st.CDN+" — restart the gate; it downloads the IP ranges itself (or: oversee proxies update)", false)
+			} else {
+				m.say("CDN: "+orNone(st.CDN)+" — restart the gate to apply", false)
+			}
+			m.refresh()
+		case "o":
+			st := m.settings
+			if st.CDN == "" {
+				m.say("pick a CDN first (c)", true)
+			} else {
+				st.OnlyProxy = !st.OnlyProxy
+				if err := m.p.SaveSettings(st); err != nil {
+					m.say(err.Error(), true)
+				} else {
+					m.say("only-proxy "+onOff(st.OnlyProxy)+" — restart the gate to apply", false)
+				}
+				m.refresh()
+			}
 		case "t":
 			m.mode = modeEditLeak
 			m.input.SetValue(fmt.Sprint(m.settings.LeakIPs))
@@ -421,7 +448,7 @@ func (m Model) help() string {
 	case tabKeys:
 		return "↑↓ select · n new · g generate · d remove · " + base
 	case tabSetup:
-		return "e domain · u upstream · t leak alert · g new example · " + base
+		return "e domain · u upstream · c CDN · o only-CDN · t leak alert · g example · " + base
 	}
 	return base
 }
@@ -548,12 +575,38 @@ func (m Model) viewSetup() string {
 		row("Domain", orDash(s.Domain)+dimStyle.Render("   e to edit")),
 		row("Upstream", s.Upstream+dimStyle.Render("   u to edit")),
 		row("Leak alert", leakText(s.LeakIPs)+dimStyle.Render("   t to edit")),
+		row("CDN fronting", cdnText(s, m.p.ProxyInfo())+dimStyle.Render("   c to change")),
 	}, "\n")))
 	b.WriteString("\n\n" + headerStyle.Render("Xray inbound to put behind the gate") + dimStyle.Render("  (listens on loopback; the gate does TLS)") + "\n")
 	b.WriteString(boxStyle.Render(oversee.XrayInbound(port, m.exPath, m.exUUID)))
 	b.WriteString("\n\n" + headerStyle.Render("Matching client link") + dimStyle.Render("  (paste into the app, then lock it with “Server gate”)") + "\n")
 	b.WriteString(boxStyle.Render(oversee.ClientLink(s.Domain, m.exPath, m.exUUID, "my-server")))
 	return b.String()
+}
+
+func orNone(s string) string {
+	if s == "" {
+		return "none"
+	}
+	return s
+}
+
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
+}
+
+func cdnText(s oversee.Settings, i oversee.ProxyListInfo) string {
+	if s.CDN == "" {
+		return "none (clients connect directly)"
+	}
+	list := "no IP ranges yet"
+	if i.Age >= 0 {
+		list = fmt.Sprintf("%d ranges, %s old", i.Count, i.Age.Round(time.Minute))
+	}
+	return fmt.Sprintf("%s · %s · only-CDN %s   o to toggle", s.CDN, list, onOff(s.OnlyProxy))
 }
 
 func leakText(n int) string {
