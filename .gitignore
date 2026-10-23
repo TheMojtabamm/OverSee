@@ -36,3 +36,4 @@ server/bin/
 
 # Built from source by tool/build_xray_aar.sh
 android/app/libs/
+android/.kotlin/
