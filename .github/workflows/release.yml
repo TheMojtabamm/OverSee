@@ -28,6 +28,23 @@ jobs:
       - name: Name of the APK
         run: echo "APK_NAME=oversea-$(echo '${{ github.ref_name }}' | tr '/' '-').apk" >> "$GITHUB_ENV"
 
+      # A published Release must have a working lock: refuse early (before the 10-minute
+      # build) if the lock/gate secrets are missing.
+      - name: Require lock secrets for a published release
+        if: ${{ github.ref_type == 'tag' || inputs.tag != '' }}
+        env:
+          LOCK_P1: ${{ secrets.LOCK_P1 }}
+          LOCK_P2: ${{ secrets.LOCK_P2 }}
+          LOCK_P3: ${{ secrets.LOCK_P3 }}
+          LOCK_P4: ${{ secrets.LOCK_P4 }}
+          GATE_KEY: ${{ secrets.GATE_KEY }}
+        run: |
+          fail=0
+          for v in LOCK_P1 LOCK_P2 LOCK_P3 LOCK_P4 GATE_KEY; do
+            [ -n "${!v}" ] || { echo "::error::repository secret $v is missing"; fail=1; }
+          done
+          exit $fail
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
