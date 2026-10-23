@@ -37,15 +37,20 @@ Push to `main` (or run the workflow manually). Artifacts:
 
 Add one secret in **Settings → Secrets and variables → Actions**:
 
-- `LOCK_CLIENT_KEY` — the client-side key material for the locked-config system.
-  It must match the key held by your server-side config generator.
+- `LOCK_P1`, `LOCK_P2`, `LOCK_P3`, `LOCK_P4` — four random strings (e.g. 16+ chars
+  each) that together form the lock secret. They are injected via `--dart-define`,
+  XOR-masked and rejoined at runtime; never committed. Without them a build cannot
+  lock or open `.ovsea` files.
+- `AD_INTERSTITIAL_ID` (optional) — AdMob interstitial unit shown after connect.
+  `ADMOB_APP_ID` (optional) — AdMob application id for the manifest. Both default
+  to Google's public *test* ids, so unconfigured builds never serve real ads.
 
-The build injects it via `--dart-define`; it is never committed.
+Rotate the four parts (and bump `LockedConfigCodec.keyGeneration`) every release.
 
 ## Why browsing this repo does not break the lock
 
 The locked-config key is **not in the source**. `LockedConfigCodec` reads it from
-a compile-time define (`LOCK_CLIENT_KEY`) that only exists during a CI build. A
+a compile-time define (`LOCK_P1..P4`) that only exists during a CI build. A
 fresh checkout carries an empty value, so the public source shows the algorithm
 but no key — and the algorithm alone opens nothing.
 

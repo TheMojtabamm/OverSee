@@ -20,6 +20,15 @@ dependencies:
   share_plus: ^7.2.2
   # Open telegram/web links (ad/channel preview).
   url_launcher: ^6.3.0
+  # QR code for sharing plain (unlocked) configs.
+  qr_flutter: ^4.1.0
+  # Ads (shown after a successful connect).
+  google_mobile_ads: ^5.1.0
+  # Configs are stored in the Android Keystore-backed secure storage, not in
+  # plain SharedPreferences.
+  flutter_secure_storage: ^9.2.2
+  # Pick a locked .ovsea file to import.
+  file_picker: ^8.1.2
 
 dev_dependencies:
   flutter_lints: ^4.0.0

@@ -1,115 +1,133 @@
 import "dart:convert";
+import "dart:math";
 import "dart:typed_data";
 
 import "package:cryptography/cryptography.dart";
 
-/// Locked-config system: encrypts a config so it can only be opened by our app.
+/// Locked-config system (format v3).
 ///
-/// Design goals
-/// ------------
-/// A static, hardcoded key is the classic weakness: extract it once, reuse it
-/// forever. Two things prevent that here:
+/// What this protects against
+/// --------------------------
+/// The realistic threat is a "paste the file into a Telegram bot and get the
+/// raw config back" decoder, and other channels re-branding your free configs.
+/// v3 raises the bar on both compared to the naive scheme it replaces:
 ///
-/// 1. Time-rotating key. The AES key is derived per "epoch" (a period computed
-///    from the current UTC date). A key pulled out for today stops working once
-///    the epoch advances, so a scraper has to re-extract continuously.
+///   * Nothing useful is in cleartext. The old format wrote the rotation epoch
+///     in the header and left the ad/telegram metadata outside the ciphertext.
+///     Here only a 4-byte magic, a 1-byte version and a random per-file salt are
+///     visible; config, ad text and telegram link are all inside AES-256-GCM.
+///   * The key is not one string literal. [_assembleSecret] rebuilds the client
+///     secret at runtime from scattered, XOR-masked parts, so a plain `strings`
+///     dump of the binary does not reveal it.
+///   * The per-file key is stretched with many HMAC rounds over (secret, salt),
+///     so even a leaked secret cannot be turned into a fast offline oracle
+///     without redoing the work per file.
 ///
-///        periodKey = HMAC-SHA256(clientKeyMaterial, "v1|<epoch>|<serverComponent>")
-///
-/// 2. No usable secret lives in this repository. [_clientKeyMaterial] is injected
-///    at build time via a compile-time define (see build workflow), NOT committed.
-///    A fresh checkout of the source contains an empty value, so reading the
-///    public repo reveals the algorithm but no key — and the algorithm alone
-///    cannot open anything.
-///
-/// Hybrid mode (recommended)
-/// -------------------------
-/// When [decode] is given a [serverComponentFor] callback, part of the key comes
-/// from your own server per epoch. Then even a fully reverse-engineered binary
-/// cannot derive keys offline: it must reach your endpoint, which you rate-limit
-/// and monitor for abusive patterns.
-///
-/// Honest limitation: no client-side lock on an open platform is unbreakable.
-/// The goal is to make breaking it expensive enough that it is not worth it for
-/// the overwhelming majority of cases.
+/// Honest limitation
+/// -----------------
+/// Because the app itself can open the file offline, the material needed to
+/// open it is, by definition, inside the app. A determined reverse engineer
+/// with the right tooling can still recover it. The goal is not mathematical
+/// impossibility — it is to make bulk, automated decoding expensive and brittle
+/// (it breaks whenever [_parts] / the key generation is rotated in a new
+/// app release), unlike the many apps whose single hardcoded key was pulled out
+/// once and reused forever.
 class LockedConfigCodec {
-  /// Injected at build time via `--dart-define=LOCK_CLIENT_KEY=...` from a CI
-  /// secret. Intentionally empty in a plain source checkout so the repository
-  /// itself carries no usable key. Must match the key held by the server-side
-  /// config generator.
-  static const String _clientKeyMaterial =
-      String.fromEnvironment("LOCK_CLIENT_KEY", defaultValue: "");
+  // ── format constants ──────────────────────────────────────────────────
+  static const List<int> _magic = [0x4F, 0x56, 0x53, 0x33]; // "OVS3"
+  static const int _version = 3;
 
-  /// Days per key rotation. 1 = daily. Set to 7 for weekly, etc.
-  static const int rotationDays = 1;
+  /// Key generation. Bump this (and rotate [_parts]) in each app release
+  /// so files made by a newer app stop opening in an older, cracked build and
+  /// any extracted secret goes stale.
+  static const int keyGeneration = 1;
 
-  static const List<int> _magic = [0x4C, 0x4B, 0x31, 0x00]; // marker
-  static const int _version = 1;
+  /// HMAC stretch rounds for the per-file key. Higher = slower per-file attack.
+  static const int _stretchRounds = 4096;
 
-  /// Current epoch number based on UTC date. The server generator must run the
-  /// exact same computation.
-  static int currentEpoch({DateTime? now}) {
-    final t = (now ?? DateTime.now()).toUtc();
-    final daysSinceUnix = t.millisecondsSinceEpoch ~/ (24 * 60 * 60 * 1000);
-    return daysSinceUnix ~/ rotationDays;
+  /// The client secret is split in four CI-injected parts
+  /// (`--dart-define=LOCK_P1..LOCK_P4`, each a hex string from a repo secret).
+  /// Nothing secret is committed: a plain source checkout has empty parts and
+  /// [hasKey] is false. Four separate defines, XOR-masked and rejoined at
+  /// runtime, mean the full key never sits contiguously in the binary.
+  static const List<String> _parts = [
+    String.fromEnvironment("LOCK_P1"),
+    String.fromEnvironment("LOCK_P2"),
+    String.fromEnvironment("LOCK_P3"),
+    String.fromEnvironment("LOCK_P4"),
+  ];
+
+  /// Rotating mask mixed in when reassembling (not secret by itself).
+  static const List<int> _mask = [0x5e, 0x27, 0x93, 0xc1, 0x6f, 0x0a, 0xd8, 0x44];
+
+  static bool get hasKey => _parts.every((p) => p.isNotEmpty);
+
+  static List<int> _assembleSecret() {
+    if (!hasKey) {
+      throw StateError("Lock key parts (LOCK_P1..P4) missing in this build.");
+    }
+    final out = <int>[];
+    for (var p = 0; p < _parts.length; p++) {
+      final bytes = utf8.encode(_parts[p]);
+      for (var i = 0; i < bytes.length; i++) {
+        out.add((bytes[i] ^ _mask[i % _mask.length] ^ (p * 31)) & 0xFF);
+      }
+    }
+    return out;
   }
 
-  static bool get hasKey => _clientKeyMaterial.isNotEmpty;
-
-  static Future<SecretKey> _deriveKey(int epoch, String serverComponent) async {
+  /// Derive the AES-256 key for one file from the file's random salt. The salt
+  /// makes every file's key unique, and the stretch makes deriving it costly to
+  /// repeat at scale.
+  static Future<SecretKey> _deriveKey(List<int> salt) async {
     final hmac = Hmac.sha256();
-    final info = utf8.encode("v1|$epoch|$serverComponent");
-    final mac = await hmac.calculateMac(
-      info,
-      secretKey: SecretKey(utf8.encode(_clientKeyMaterial)),
-    );
-    return SecretKey(mac.bytes); // 32 bytes -> AES-256 key
+    final secret = SecretKey([
+      ..._assembleSecret(),
+      ...utf8.encode("ovsea|v3|gen$keyGeneration"),
+    ]);
+    // Initial block binds salt + domain, then iterate to stretch.
+    var acc = (await hmac.calculateMac(
+      [...salt, ...utf8.encode("ovsea-lock-v3")],
+      secretKey: secret,
+    ))
+        .bytes;
+    for (var i = 1; i < _stretchRounds; i++) {
+      acc = (await hmac.calculateMac(acc, secretKey: secret)).bytes;
+    }
+    return SecretKey(acc); // 32 bytes → AES-256
   }
 
-  /// Locks a raw config into a base64url blob. This is the "generate" side and
-  /// normally runs in the server-side tool; it is here so the same code path can
-  /// also be exercised in tests and local builds that carry the key.
-  ///
-  /// When [adText] or [telegramUrl] are provided they are embedded inside the
-  /// encrypted envelope so the receiver's app can show the owner's ad before
-  /// (or during) connection. The plaintext that gets encrypted is either:
-  ///  - a JSON envelope: `{"c":"<config>","a":"<ad>","t":"<tg>"}`
-  ///  - the raw config string (when no ad/tg are set, backward-compatible).
+  /// Locks a raw Xray config (and optional owner ad / telegram link) into a
+  /// base64url blob suitable for writing to a `.ovsea` file or sharing as text.
   static Future<String> encode(
     String plaintextConfig, {
-    int? epoch,
-    String serverComponent = "",
     String? adText,
     String? telegramUrl,
   }) async {
-    if (!hasKey) {
-      throw StateError("No key material (LOCK_CLIENT_KEY) available at build.");
-    }
-    final ep = epoch ?? currentEpoch();
-    final key = await _deriveKey(ep, serverComponent);
+    final payload = jsonEncode({
+      "c": plaintextConfig,
+      if (adText != null && adText.isNotEmpty) "a": adText,
+      if (telegramUrl != null && telegramUrl.isNotEmpty) "t": telegramUrl,
+      "g": keyGeneration,
+    });
 
-    // Build the plaintext that gets encrypted. If ad/tg metadata are provided
-    // we wrap everything in a JSON envelope so the receiver's app can display
-    // the owner's ad/telegram before connecting.
-    String plaintext;
-    if (adText != null && adText.isNotEmpty ||
-        telegramUrl != null && telegramUrl.isNotEmpty) {
-      plaintext = jsonEncode({
-        "c": plaintextConfig,
-        if (adText != null && adText.isNotEmpty) "a": adText,
-        if (telegramUrl != null && telegramUrl.isNotEmpty) "t": telegramUrl,
-      });
-    } else {
-      plaintext = plaintextConfig;
-    }
+    final rnd = Random.secure();
+    final salt =
+        Uint8List.fromList(List<int>.generate(16, (_) => rnd.nextInt(256)));
+    final key = await _deriveKey(salt);
 
-    // Header (magic + version + epoch) is authenticated as AAD so it can't be
-    // tampered with.
-    final header = Uint8List.fromList([..._magic, _version, ..._uint32be(ep)]);
+    // Header (magic + version + generation + salt) is authenticated as AAD so
+    // it cannot be swapped without failing decryption.
+    final header = Uint8List.fromList([
+      ..._magic,
+      _version,
+      keyGeneration & 0xFF,
+      ...salt,
+    ]);
 
     final aes = AesGcm.with256bits();
     final box = await aes.encrypt(
-      utf8.encode(plaintext),
+      utf8.encode(payload),
       secretKey: key,
       aad: header,
     );
@@ -123,76 +141,50 @@ class LockedConfigCodec {
     return base64Url.encode(blob);
   }
 
-  /// Opens a locked blob. In hybrid mode, provide [serverComponentFor] to fetch
-  /// the server component matching the epoch embedded in the blob.
-  static Future<String> decode(
-    String blobBase64, {
-    Future<String> Function(int epoch)? serverComponentFor,
-  }) async {
-    if (!hasKey) {
-      throw StateError("No key material (LOCK_CLIENT_KEY) available at build.");
-    }
-    final bytes = base64Url.decode(_normalize(blobBase64));
+  /// Opens a locked blob and returns the structured envelope.
+  static Future<ConfigEnvelope> decodeConfig(String blobBase64) async {
+    final bytes = base64Url.decode(_normalize(blobBase64.trim()));
 
-    if (bytes.length < 4 + 1 + 4 + 12 + 16) {
+    const headerLen = 4 + 1 + 1 + 16; // magic+ver+gen+salt
+    if (bytes.length < headerLen + 12 + 16) {
       throw const FormatException("Locked blob too short / corrupt");
     }
     for (var i = 0; i < 4; i++) {
       if (bytes[i] != _magic[i]) {
-        throw const FormatException("Not a valid locked config");
+        throw const FormatException("Not a valid Oversea locked config");
       }
     }
-    final version = bytes[4];
-    if (version != _version) {
-      throw FormatException("Unsupported lock version: $version");
+    if (bytes[4] != _version) {
+      throw FormatException("Unsupported lock version: ${bytes[4]}");
     }
-    final epoch = _readUint32be(bytes, 5);
 
-    final serverComponent =
-        serverComponentFor != null ? await serverComponentFor(epoch) : "";
-    final key = await _deriveKey(epoch, serverComponent);
-
-    final header = Uint8List.fromList(bytes.sublist(0, 9));
-    final nonce = bytes.sublist(9, 21); // 12 bytes
+    final salt = bytes.sublist(6, 6 + 16);
+    final header = Uint8List.fromList(bytes.sublist(0, headerLen));
+    final nonce = bytes.sublist(headerLen, headerLen + 12);
     final macBytes = bytes.sublist(bytes.length - 16);
-    final cipherText = bytes.sublist(21, bytes.length - 16);
+    final cipherText = bytes.sublist(headerLen + 12, bytes.length - 16);
 
+    final key = await _deriveKey(salt);
     final aes = AesGcm.with256bits();
     final clear = await aes.decrypt(
       SecretBox(cipherText, nonce: nonce, mac: Mac(macBytes)),
       secretKey: key,
-      aad: header,
     );
-    return utf8.decode(clear);
+    final plain = utf8.decode(clear);
+
+    final j = jsonDecode(plain) as Map<String, dynamic>;
+    return ConfigEnvelope(
+      j["c"] as String,
+      adText: j["a"] as String?,
+      telegramUrl: j["t"] as String?,
+    );
   }
 
-  /// Decode a locked blob and return structured metadata. If the encrypted
-  /// payload is a JSON envelope it is parsed; otherwise [ConfigEnvelope.config]
-  /// is the raw config with no ad/tg.
-  static Future<ConfigEnvelope> decodeConfig(
-    String blobBase64, {
-    Future<String> Function(int epoch)? serverComponentFor,
-  }) async {
-    final plain = await decode(blobBase64, serverComponentFor: serverComponentFor);
-    try {
-      final j = jsonDecode(plain) as Map<String, dynamic>;
-      if (j.containsKey("c")) {
-        return ConfigEnvelope(
-          j["c"] as String,
-          adText: j["a"] as String?,
-          telegramUrl: j["t"] as String?,
-        );
-      }
-    } catch (_) {}
-    return ConfigEnvelope(plain);
-  }
-
-  /// Cheap check whether a string looks like one of our locked blobs (no
-  /// decryption attempted).
+  /// Cheap check whether a string looks like one of our v3 locked blobs.
   static bool looksLocked(String s) {
     try {
       final b = base64Url.decode(_normalize(s.trim()));
-      return b.length >= 9 &&
+      return b.length >= 4 &&
           b[0] == _magic[0] &&
           b[1] == _magic[1] &&
           b[2] == _magic[2] &&
@@ -202,23 +194,13 @@ class LockedConfigCodec {
     }
   }
 
-  // ---- helpers -------------------------------------------------------------
-
-  static List<int> _uint32be(int v) =>
-      [(v >> 24) & 0xFF, (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF];
-
-  static int _readUint32be(List<int> b, int off) =>
-      (b[off] << 24) | (b[off + 1] << 16) | (b[off + 2] << 8) | b[off + 3];
-
   static String _normalize(String s) {
-    final clean = s.trim();
-    final mod = clean.length % 4;
-    return mod == 0 ? clean : clean + ("=" * (4 - mod));
+    final mod = s.length % 4;
+    return mod == 0 ? s : s + ("=" * (4 - mod));
   }
 }
 
-/// Structured result from [LockedConfigCodec.decodeConfig] — carries the
-/// config string plus optional owner metadata (ad text, Telegram URL).
+/// Structured result from [LockedConfigCodec.decodeConfig].
 class ConfigEnvelope {
   final String config;
   final String? adText;

@@ -1,21 +1,20 @@
 import "dart:convert";
 
-import "package:shared_preferences/shared_preferences.dart";
+import "package:flutter_secure_storage/flutter_secure_storage.dart";
 
 import "../models/vpn_config.dart";
 
-/// Local, on-device storage of the user's configs (no server, no account).
-///
-/// Later-phase security note: configs that came from a locked source are best
-/// stored still-locked and only opened at connect time, so extracting device
-/// storage does not leak the raw config. For the base phase they are stored raw
-/// for simplicity.
+/// On-device storage of the user's configs. Backed by Android Keystore-protected
+/// secure storage so configs (especially ones imported from locked files) are
+/// not readable as plain text from app data.
 class ConfigStore {
-  static const _key = "user_configs_v1";
+  static const _key = "user_configs_v2";
+  static const _storage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
 
   Future<List<VpnConfig>> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_key);
+    final raw = await _storage.read(key: _key);
     if (raw == null || raw.isEmpty) return [];
     final list = jsonDecode(raw) as List;
     return list
@@ -23,11 +22,8 @@ class ConfigStore {
         .toList();
   }
 
-  Future<void> saveAll(List<VpnConfig> configs) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-        _key, jsonEncode(configs.map((c) => c.toJson()).toList()));
-  }
+  Future<void> saveAll(List<VpnConfig> configs) => _storage.write(
+      key: _key, value: jsonEncode(configs.map((c) => c.toJson()).toList()));
 
   Future<List<VpnConfig>> add(List<VpnConfig> incoming) async {
     final current = await load();

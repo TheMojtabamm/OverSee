@@ -29,6 +29,17 @@ enum VpnProtocol {
         VpnProtocol.l2tp => "L2TP",
         VpnProtocol.unknown => "Unknown",
       };
+
+  /// Protocols the Xray engine handles. The app currently ships Xray only, so
+  /// the add/import flows accept only these.
+  bool get isXray => switch (this) {
+        VpnProtocol.vless ||
+        VpnProtocol.vmess ||
+        VpnProtocol.trojan ||
+        VpnProtocol.shadowsocks =>
+          true,
+        _ => false,
+      };
 }
 
 class VpnConfig {
@@ -57,6 +68,10 @@ class VpnConfig {
   /// taps this config. Carried inside the locked blob.
   final String? telegramUrl;
 
+  /// True when this config came from a locked file. Locked configs are never
+  /// shown, copied, shared as plain text or turned into a QR — only connected.
+  final bool locked;
+
   const VpnConfig({
     required this.id,
     required this.name,
@@ -68,6 +83,7 @@ class VpnConfig {
     this.channelRef,
     this.adText,
     this.telegramUrl,
+    this.locked = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -81,6 +97,7 @@ class VpnConfig {
         "channelRef": channelRef,
         "adText": adText,
         "telegramUrl": telegramUrl,
+        "locked": locked,
       };
 
   factory VpnConfig.fromJson(Map<String, dynamic> j) => VpnConfig(
@@ -97,6 +114,7 @@ class VpnConfig {
         channelRef: j["channelRef"] as String?,
         adText: j["adText"] as String?,
         telegramUrl: j["telegramUrl"] as String?,
+        locked: (j["locked"] as bool?) ?? false,
       );
 
   VpnConfig copyWith({
@@ -110,6 +128,7 @@ class VpnConfig {
     String? channelRef,
     String? adText,
     String? telegramUrl,
+    bool? locked,
   }) =>
       VpnConfig(
         id: id ?? this.id,
@@ -122,5 +141,6 @@ class VpnConfig {
         channelRef: channelRef ?? this.channelRef,
         adText: adText ?? this.adText,
         telegramUrl: telegramUrl ?? this.telegramUrl,
+        locked: locked ?? this.locked,
       );
 }
