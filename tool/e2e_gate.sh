@@ -14,6 +14,8 @@ UUID=11111111-2222-3333-4444-555555555555
 KEY=e2e-test-key
 LINK="vless://$UUID@127.0.0.1:8081?encryption=none&security=none&type=ws&path=%2Fws#e2e"
 
+# (The test server's freedom outbound allows private targets via finalRules=[allow]; the
+# default blocks them, which is what you want on a real server.)
 # Xray sends loopback destinations straight out ("direct") regardless of the proxy,
 # so the origin must live on a non-loopback address to prove the proxy path.
 ORIGIN_IP="$(hostname -I | awk '{print $1}')"
@@ -26,7 +28,7 @@ cat > "$W/server.json" <<EOF
  "inbounds":[{"listen":"127.0.0.1","port":10000,"protocol":"vless",
    "settings":{"clients":[{"id":"$UUID"}],"decryption":"none"},
    "streamSettings":{"network":"ws","wsSettings":{"path":"/ws"}}}],
- "outbounds":[{"protocol":"freedom"}]}
+ "outbounds":[{"protocol":"freedom","settings":{"finalRules":[{"action":"allow"}]}}]}
 EOF
 "$XRAY" run -c "$W/server.json" >"$W/server.log" 2>&1 &
 

@@ -45,6 +45,26 @@ jobs:
         working-directory: tool/validate_xray_config
         run: go run . /tmp/xray_out/*.json
 
+  gate-e2e:
+    # Real Xray server + the gate + a real Xray client built by the app's Dart code:
+    # a client WITH the token reaches the origin, one without it (a decoded link
+    # pasted into another app) is refused.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.7"
+          channel: stable
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - run: flutter pub get
+      - name: Build Xray
+        working-directory: tool/validate_xray_config
+        run: GOFLAGS=-mod=mod go build -o "$RUNNER_TEMP/xray" github.com/xtls/xray-core/main
+      - run: XRAY="$RUNNER_TEMP/xray" tool/e2e_gate.sh
+
   server:
     runs-on: ubuntu-latest
     defaults:
