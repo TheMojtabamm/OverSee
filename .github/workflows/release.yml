@@ -78,6 +78,24 @@ jobs:
           GATE_KEY: ${{ secrets.GATE_KEY }}
         run: dart run tool/mask_secrets.dart >> "$GITHUB_ENV"
 
+      # A release without real AdMob IDs would serve Google's *test* ads and earn nothing.
+      - name: Require real AdMob IDs
+        env:
+          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
+          AD_INTERSTITIAL_ID: ${{ secrets.AD_INTERSTITIAL_ID }}
+          AD_BANNER_ID: ${{ secrets.AD_BANNER_ID }}
+        run: |
+          fail=0
+          for v in ADMOB_APP_ID AD_INTERSTITIAL_ID AD_BANNER_ID; do
+            val="${!v}"
+            case "$val" in
+              ca-app-pub-3940256099942544*) echo "::error::$v is Google's test ID"; fail=1;;
+              ca-app-pub-*) ;;
+              *) echo "::error::$v is missing (add it as a repository secret)"; fail=1;;
+            esac
+          done
+          exit $fail
+
       - name: Build APK (release)
         env:
           ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
