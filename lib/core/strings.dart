@@ -69,11 +69,12 @@ class S {
       "invalid_tg": "Channel link must be an https://t.me/… link.",
       "disclosure_title": "VPN connection",
       "disclosure_body":
-          "Oversea uses Android's VPN service to route your device's internet traffic through the server in the config you choose. Your traffic is encrypted between your phone and that server.\n\nOversea does not record, store or sell your browsing activity. The server you pick is run by the config's owner, so only connect to servers you trust.\n\nThe app shows ads (Google AdMob), which may use your advertising ID if you consent.",
+          "Oversea uses Android's VPN service to route your device's internet traffic through the server in the config you choose. Your traffic is encrypted between your phone and that server, unless the config is marked \"Not encrypted\" (some servers are set up without TLS).\n\nOversea does not record, store or sell your browsing activity. The server you pick is run by the config's owner, so only connect to servers you trust.\n\nThe app shows ads (Google AdMob), which may use your advertising ID if you consent.",
       "agree": "Agree & continue",
-      "dns": "Private DNS (DoH)",
-      "dns_hint":
-          "Lookups always go through the tunnel. DoH encrypts them inside it.",
+      "dns": "DNS",
+      "dns_hint": "How this phone looks up website names while connected.",
+      "dns_opt_plain": "Lookups travel through the tunnel like normal traffic",
+      "dns_opt_doh": "Encrypted (DNS over HTTPS) inside the tunnel",
       "fragment": "TLS fragmentation",
       "fragment_hint": "Helps on networks that filter by SNI.",
       "ipv6": "IPv6",

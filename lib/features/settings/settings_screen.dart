@@ -103,16 +103,17 @@ class SettingsScreen extends ConsumerWidget {
             const SizedBox(height: 20),
             SectionTitle(s.t("g_routing")),
             SettingsGroup(children: [
-              SettingsRow(
+              ChoiceRow<DnsPreset>(
                 icon: Icons.dns_rounded,
                 title: s.t("dns"),
-                subtitle: s.t("dns_hint"),
-                trailing: _Choice<DnsPreset>(
-                  value: settings.dns,
-                  values: DnsPreset.values,
-                  label: dnsLabel,
-                  onChanged: (v) => notifier.change((x) => x.copyWith(dns: v)),
-                ),
+                value: settings.dns,
+                values: DnsPreset.values,
+                label: dnsLabel,
+                hint: (d) => d == DnsPreset.tunnel
+                    ? s.t("dns_opt_plain")
+                    : s.t("dns_opt_doh"),
+                sheetNote: s.t("dns_hint"),
+                onChanged: (v) => notifier.change((x) => x.copyWith(dns: v)),
               ),
               SettingsRow(
                 icon: Icons.lan_rounded,
@@ -124,16 +125,14 @@ class SettingsScreen extends ConsumerWidget {
                 onTap: () => notifier
                     .change((x) => x.copyWith(bypassLan: !settings.bypassLan)),
               ),
-              SettingsRow(
+              ChoiceRow<SplitMode>(
                 icon: Icons.apps_rounded,
                 title: s.t("split"),
-                trailing: _Choice<SplitMode>(
-                  value: settings.splitMode,
-                  values: SplitMode.values,
-                  label: splitLabel,
-                  onChanged: (v) =>
-                      notifier.change((x) => x.copyWith(splitMode: v)),
-                ),
+                value: settings.splitMode,
+                values: SplitMode.values,
+                label: splitLabel,
+                onChanged: (v) =>
+                    notifier.change((x) => x.copyWith(splitMode: v)),
               ),
               if (settings.splitMode != SplitMode.all)
                 SettingsRow(
@@ -215,15 +214,13 @@ class SettingsScreen extends ConsumerWidget {
             const SizedBox(height: 20),
             SectionTitle(s.t("g_app")),
             SettingsGroup(children: [
-              SettingsRow(
+              ChoiceRow<ThemeMode>(
                 icon: Icons.palette_rounded,
                 title: s.t("theme"),
-                trailing: _Choice<ThemeMode>(
-                  value: themeMode,
-                  values: ThemeMode.values,
-                  label: themeLabel,
-                  onChanged: (v) => ref.read(themeModeProvider.notifier).set(v),
-                ),
+                value: themeMode,
+                values: ThemeMode.values,
+                label: themeLabel,
+                onChanged: (v) => ref.read(themeModeProvider.notifier).set(v),
               ),
               SettingsRow(
                   icon: Icons.info_outline_rounded,
@@ -238,35 +235,87 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-/// Compact dropdown shown at the end of a settings row.
-class _Choice<T> extends StatelessWidget {
+/// A settings row that shows the current value and opens a bottom sheet with the options
+/// (radio list, optional one-line hint per option) when tapped.
+class ChoiceRow<T> extends StatelessWidget {
+  final IconData icon;
+  final String title;
   final T value;
   final List<T> values;
   final String Function(T) label;
+  final String Function(T)? hint;
+  final String? sheetNote;
   final ValueChanged<T> onChanged;
-  const _Choice(
-      {required this.value,
-      required this.values,
-      required this.label,
-      required this.onChanged});
+  const ChoiceRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.value,
+    required this.values,
+    required this.label,
+    required this.onChanged,
+    this.hint,
+    this.sheetNote,
+  });
+
+  Future<void> _open(BuildContext context) async {
+    final c = context.colors;
+    final picked = await showModalBottomSheet<T>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                child: Text(title,
+                    style: Theme.of(ctx)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w800)),
+              ),
+              if (sheetNote != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Text(sheetNote!,
+                      style: TextStyle(color: c.muted, height: 1.4)),
+                ),
+              for (final v in values)
+                ListTile(
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                  title: Text(label(v),
+                      style: TextStyle(
+                          fontWeight:
+                              v == value ? FontWeight.w700 : FontWeight.w500)),
+                  subtitle: hint == null
+                      ? null
+                      : Text(hint!(v),
+                          style: TextStyle(fontSize: 12.5, color: c.muted)),
+                  trailing: v == value
+                      ? Icon(Icons.check_circle_rounded, color: c.brand)
+                      : Icon(Icons.circle_outlined, color: c.muted),
+                  onTap: () => Navigator.pop(ctx, v),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked != null) onChanged(picked);
+  }
 
   @override
-  Widget build(BuildContext context) => PopupMenuButton<T>(
-        initialValue: value,
-        onSelected: onChanged,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        itemBuilder: (_) => [
-          for (final v in values) PopupMenuItem(value: v, child: Text(label(v)))
-        ],
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label(value),
-                style: TextStyle(
-                    color: context.colors.brand, fontWeight: FontWeight.w600)),
-            Icon(Icons.expand_more_rounded,
-                size: 20, color: context.colors.brand),
-          ],
-        ),
+  Widget build(BuildContext context) => SettingsRow(
+        icon: icon,
+        title: title,
+        subtitle: label(value),
+        trailing: Icon(Icons.chevron_right_rounded,
+            color: context.colors.muted, size: 22),
+        onTap: () => _open(context),
       );
 }
