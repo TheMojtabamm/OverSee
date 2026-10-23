@@ -79,7 +79,9 @@ jobs:
         run: dart run tool/mask_secrets.dart >> "$GITHUB_ENV"
 
       # A release without real AdMob IDs would serve Google's *test* ads and earn nothing.
+      # Tags containing "-test" (e.g. v1.0.0-test1) skip this check and are published as pre-releases.
       - name: Require real AdMob IDs
+        if: ${{ !contains(github.ref_name, '-test') }}
         env:
           ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
           AD_INTERSTITIAL_ID: ${{ secrets.AD_INTERSTITIAL_ID }}
@@ -131,6 +133,7 @@ jobs:
         with:
           files: oversea-${{ github.ref_name }}.apk
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-test') }}
 
   windows:
     runs-on: windows-latest
