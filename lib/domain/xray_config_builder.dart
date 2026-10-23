@@ -1,6 +1,16 @@
 import "dart:convert";
 
 /// Tunnel behaviour that is independent of which server is used.
+/// A loopback-only, password-protected HTTP proxy inside the core. It is how the app
+/// (which is excluded from its own VPN) looks at the world *through* the tunnel, e.g. to
+/// show the exit IP. Random port and credentials per connection; kept in memory only.
+class ProbeEndpoint {
+  final int port;
+  final String user;
+  final String pass;
+  const ProbeEndpoint(this.port, this.user, this.pass);
+}
+
 class TunnelOptions {
   /// DNS-over-HTTPS endpoints. Queried *through* the tunnel, so the ISP never
   /// sees the lookups. Use IP-literal URLs so DoH itself needs no resolver.
@@ -23,6 +33,9 @@ class TunnelOptions {
   /// HTTPUpgrade connections; ignored for other transports.
   final String? gateToken;
 
+  /// Adds the loopback probe proxy (see [ProbeEndpoint]).
+  final ProbeEndpoint? probe;
+
   const TunnelOptions({
     this.dohServers = const [
       "https://1.1.1.1/dns-query",
@@ -33,6 +46,7 @@ class TunnelOptions {
     this.bypassLan = true,
     this.mtu = 1500,
     this.gateToken,
+    this.probe,
   });
 }
 
@@ -116,6 +130,18 @@ class XrayConfigBuilder {
             "routeOnly": true,
           },
         },
+        if (opts.probe != null)
+          {
+            "tag": "probe-in",
+            "listen": "127.0.0.1",
+            "port": opts.probe!.port,
+            "protocol": "http",
+            "settings": {
+              "accounts": [
+                {"user": opts.probe!.user, "pass": opts.probe!.pass},
+              ],
+            },
+          },
       ],
       "outbounds": [
         proxy,

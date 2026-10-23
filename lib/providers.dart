@@ -2,11 +2,13 @@ import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
 import "data/config_store.dart";
+import "data/exit_ip.dart";
 import "data/identity_store.dart";
 import "data/settings_store.dart";
 import "data/tunnel_service.dart";
 import "domain/tunnel_settings.dart";
 import "domain/vpn_config.dart";
+import "domain/xray_config_builder.dart";
 
 final configStoreProvider = Provider<ConfigStore>((ref) => ConfigStore());
 
@@ -145,6 +147,19 @@ final tunnelStateProvider = StreamProvider<TunnelState>((ref) async* {
   final svc = ref.watch(tunnelServiceProvider);
   yield await svc.status();
   yield* svc.states;
+});
+
+/// Loopback probe proxy of the running core (random per connection, memory only).
+final probeProvider = StateProvider<ProbeEndpoint?>((ref) => null);
+
+/// Exit IP + country seen through the tunnel; null while not connected or unavailable.
+final exitInfoProvider = FutureProvider.autoDispose<ExitInfo?>((ref) async {
+  // Only the phase matters; the state itself changes every second (traffic counters).
+  final phase =
+      ref.watch(tunnelStateProvider.select((s) => s.valueOrNull?.phase));
+  final probe = ref.watch(probeProvider);
+  if (phase != TunnelPhase.connected || probe == null) return null;
+  return fetchExitInfo(probe);
 });
 
 /// Which saved config the user last asked to connect.

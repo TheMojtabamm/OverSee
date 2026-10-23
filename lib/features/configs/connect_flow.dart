@@ -1,4 +1,5 @@
 import "dart:async";
+import "dart:math";
 
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
@@ -123,8 +124,9 @@ Future<void> _connect(BuildContext context, WidgetRef ref, VpnConfig c,
   // 4. Build the Xray config.
   final settings = await ref.read(settingsProvider.future);
   final String json;
+  final probe = _newProbe();
   try {
-    json = XrayConfigBuilder.build(c.raw, _optionsFor(c, settings));
+    json = XrayConfigBuilder.build(c.raw, _optionsFor(c, settings, probe));
   } on UnsupportedConfigException {
     messenger.showSnackBar(SnackBar(content: Text(s.t("unsupported"))));
     return;
@@ -132,6 +134,7 @@ Future<void> _connect(BuildContext context, WidgetRef ref, VpnConfig c,
 
   // 5. Start and wait for the outcome.
   ref.read(activeConfigIdProvider.notifier).state = c.id;
+  ref.read(probeProvider.notifier).state = probe;
   ref.read(tunnelTokenDayProvider.notifier).state =
       c.gated ? currentTokenDay() : null;
   final outcome = Completer<TunnelState>();
@@ -278,9 +281,30 @@ class _CreatorLine extends ConsumerWidget {
   }
 }
 
-TunnelOptions _optionsFor(VpnConfig c, TunnelSettings settings) {
+/// Random loopback port + credentials for the probe proxy (see ProbeEndpoint).
+ProbeEndpoint _newProbe() {
+  final r = Random.secure();
+  String token(int n) =>
+      List.generate(n, (_) => r.nextInt(256).toRadixString(16).padLeft(2, "0"))
+          .join();
+  return ProbeEndpoint(20000 + r.nextInt(30000), token(6), token(16));
+}
+
+TunnelOptions _optionsFor(VpnConfig c, TunnelSettings settings,
+    [ProbeEndpoint? probe]) {
   final o = settings.toOptions();
-  if (!c.gated) return o;
+  if (!c.gated) {
+    return probe == null
+        ? o
+        : TunnelOptions(
+            dohServers: o.dohServers,
+            fragment: o.fragment,
+            ipv6: o.ipv6,
+            bypassLan: o.bypassLan,
+            mtu: o.mtu,
+            probe: probe,
+          );
+  }
   // The creator fingerprint is part of the token, so a gated file must carry a
   // *verified* signature; an unsigned or re-signed file cannot produce a token the
   // owner's server will accept.
@@ -296,6 +320,7 @@ TunnelOptions _optionsFor(VpnConfig c, TunnelSettings settings) {
     bypassLan: o.bypassLan,
     mtu: o.mtu,
     gateToken: GateToken.current(c.gateCode!, fp),
+    probe: probe,
   );
 }
 

@@ -12,6 +12,7 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:oversea/app.dart";
 import "package:oversea/data/config_store.dart";
+import "package:oversea/data/exit_ip.dart";
 import "package:oversea/data/identity_store.dart";
 import "package:oversea/data/tunnel_service.dart";
 import "package:oversea/domain/vpn_config.dart";
@@ -129,6 +130,10 @@ Future<void> _show(
     identityStoreProvider.overrideWithValue(IdentityStore(vault: _MemVault())),
     onboardedProvider.overrideWith((ref) async => onboarded),
     if (connectedTimer) connectedSinceProvider.overrideWith(_FakeSince.new),
+    exitInfoProvider.overrideWith((ref) async => tunnel.phase ==
+            TunnelPhase.connected
+        ? const ExitInfo("203.0.113.7", country: "Germany", countryCode: "DE")
+        : null),
   ]);
   addTearDown(container.dispose);
   container.read(
@@ -186,6 +191,7 @@ void main() {
     );
     expect(find.text("Connected"), findsWidgets);
     expect(find.textContaining("00:12:3"), findsOneWidget);
+    expect(find.textContaining("203.0.113.7"), findsOneWidget);
   });
 
   testWidgets("home — connecting (light)", (t) async {

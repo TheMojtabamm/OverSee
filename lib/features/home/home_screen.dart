@@ -238,6 +238,8 @@ class _Hero extends ConsumerWidget {
               textAlign: TextAlign.center,
               style: TextStyle(color: c.muted, fontSize: 14)),
         if (isConnected) ...[
+          const SizedBox(height: 10),
+          const _ExitIp(),
           const SizedBox(height: 14),
           Row(
             children: [
@@ -261,6 +263,42 @@ class _Hero extends ConsumerWidget {
             Text(hint, style: TextStyle(color: c.muted, fontSize: 12)),
           ],
         ],
+      ],
+    );
+  }
+}
+
+/// "Exit IP 203.0.113.7 · 🇩🇪 Germany", looked up through the tunnel.
+class _ExitIp extends ConsumerWidget {
+  const _ExitIp();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = S.of(context);
+    final c = context.colors;
+    final info = ref.watch(exitInfoProvider);
+    final (icon, text) = info.when(
+      loading: () => (Icons.public_rounded, s.t("exit_ip_checking")),
+      error: (_, __) => (Icons.public_off_rounded, s.t("exit_ip_failed")),
+      data: (v) => v == null
+          ? (Icons.public_off_rounded, s.t("exit_ip_failed"))
+          : (
+              Icons.public_rounded,
+              "${s.t("exit_ip")}  ${v.ip}${v.label.isEmpty ? "" : "  ·  ${v.label}"}"
+            ),
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: c.muted),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textDirection: TextDirection.ltr,
+              style: TextStyle(color: c.muted, fontSize: 13)),
+        ),
       ],
     );
   }

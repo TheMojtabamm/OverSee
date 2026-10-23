@@ -139,4 +139,24 @@ void main() {
     final s = ((proxyOf(c)["settings"] as Map)["servers"] as List).first as Map;
     expect(s["password"], r"pa$$word");
   });
+
+  test("the probe proxy is loopback-only, password-protected and optional", () {
+    const link =
+        "vless://11111111-2222-3333-4444-555555555555@h.example.com:443"
+        "?security=tls&sni=h.example.com&type=ws&path=%2Fws#x";
+    final without = XrayConfigBuilder.buildMap(link, const TunnelOptions());
+    expect((without["inbounds"] as List).length, 1);
+    final withProbe = XrayConfigBuilder.buildMap(
+        link, const TunnelOptions(probe: ProbeEndpoint(24680, "u", "p")));
+    final inbounds =
+        (withProbe["inbounds"] as List).cast<Map<String, dynamic>>();
+    final probe = inbounds.firstWhere((i) => i["tag"] == "probe-in");
+    expect(probe["listen"], "127.0.0.1");
+    expect(probe["port"], 24680);
+    expect(probe["protocol"], "http");
+    expect(
+        ((probe["settings"] as Map<String, dynamic>)["accounts"] as List)
+            .single,
+        {"user": "u", "pass": "p"});
+  });
 }

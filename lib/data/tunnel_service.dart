@@ -44,10 +44,17 @@ class TunnelService {
   static const _m = MethodChannel("oversea/tunnel");
   static const _e = EventChannel("oversea/tunnel/events");
 
-  Stream<TunnelState> get states => _e
+  // ONE subscription to the native side, shared by every listener. The native bridge
+  // keeps a single event sink, so each extra `receiveBroadcastStream()` replaced it (and
+  // its cancel cleared it): the UI stopped hearing "connected" as soon as the connect flow
+  // listened and let go.
+  late final Stream<TunnelState> _states = _e
       .receiveBroadcastStream()
       .map((e) => TunnelState.fromMap(e as Map<Object?, Object?>))
-      .handleError((_) {});
+      .handleError((_) {})
+      .asBroadcastStream();
+
+  Stream<TunnelState> get states => _states;
 
   Future<bool> prepare() => _bool("prepare");
   Future<bool> requestNotifications() => _bool("requestNotifications");

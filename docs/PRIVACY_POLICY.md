@@ -41,3 +41,9 @@ Oversea is not directed to children under 13 [adjust to your jurisdiction].
 
 ## Changes & contact
 We will post changes here. Questions: [email].
+
+## Exit IP display
+While connected, the app asks a public IP-lookup service (ipwho.is) what address your traffic
+appears to come from, so it can show you the exit IP and country. The request goes through the
+tunnel, so the service sees the server's address, not yours. Nothing is stored by the app.
+
