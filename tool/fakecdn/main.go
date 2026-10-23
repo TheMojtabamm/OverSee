@@ -22,6 +22,7 @@ func main() {
 	src := flag.String("src", "127.0.0.2", "source IP the edge uses towards the origin")
 	clientIP := flag.String("client-ip", "198.51.100.77", "the 'real client' this edge reports")
 	header := flag.String("header", "CF-Connecting-IP", "header carrying the client IP")
+	strip := flag.String("strip", "", "request header this edge DROPS (simulates a CDN rule that removes unknown headers)")
 	flag.Parse()
 
 	u, _ := url.Parse("http://" + *origin)
@@ -31,6 +32,9 @@ func main() {
 			r.SetURL(u)
 			r.Out.Header.Del(*header) // a real CDN overwrites whatever the client sent
 			r.Out.Header.Set(*header, *clientIP)
+			if *strip != "" {
+				r.Out.Header.Del(*strip)
+			}
 		},
 		FlushInterval: -1,
 		Transport: &http.Transport{

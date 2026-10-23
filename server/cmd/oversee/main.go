@@ -85,6 +85,47 @@ func main() {
 		s := p.LoadSettings()
 		fmt.Printf("service: %s (boot: %s)\ndomain:  %s\nupstream: %s\nlocks:   %d\napp keys: %d\n",
 			st.Active, st.Enabled, dash(s.Domain), s.Upstream, len(locks), len(keys))
+	case "doctor":
+		findings := p.Doctor(oversee.RealDoctorEnv())
+		for _, f := range findings {
+			mark := map[oversee.Level]string{oversee.OK: "✓", oversee.Warn: "⚠", oversee.Fail: "✗"}[f.Level]
+			fmt.Printf("%s %s\n", mark, f.Title)
+			if f.Level != oversee.OK {
+				fmt.Printf("    %s\n", f.Detail)
+				if f.Fix != "" {
+					fmt.Printf("    fix: %s\n", f.Fix)
+				}
+			}
+		}
+		if oversee.Worst(findings) == oversee.Fail {
+			os.Exit(1)
+		}
+	case "cdn-test":
+		url := ""
+		for i := 1; i+1 < len(args); i++ {
+			if args[i] == "--url" {
+				url = args[i+1]
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		findings, err := p.CDNTest(ctx, url, nil)
+		check(err)
+		for _, f := range findings {
+			mark := map[oversee.Level]string{oversee.OK: "✓", oversee.Warn: "⚠", oversee.Fail: "✗"}[f.Level]
+			fmt.Printf("%s %s\n", mark, f.Title)
+			if f.Level != oversee.OK {
+				fmt.Printf("    %s\n", f.Detail)
+				if f.Fix != "" {
+					fmt.Printf("    fix: %s\n", f.Fix)
+				}
+			} else if f.Detail != "" {
+				fmt.Printf("    %s\n", f.Detail)
+			}
+		}
+		if oversee.Worst(findings) == oversee.Fail {
+			os.Exit(1)
+		}
 	case "set":
 		need(args, 3, "oversee set <domain|upstream|plain|leak-ips|cdn|only-proxy|cert|key> <value>")
 		check(p.SetSetting(args[1], args[2]))
@@ -139,6 +180,8 @@ oversee — manage the Oversea gate
   oversee revoke <id>     revoke a lock (id or code, at least 4 characters)
   oversee keys            list app keys (masked)
   oversee key add <key>   make <key> the current app key
+  oversee cdn-test        check the token header and real client IP survive your CDN
+  oversee doctor          audit the setup (is Xray reachable around the gate?)
   oversee set <name> <v>  change a setting (domain, upstream, cdn, only-proxy, cert, key, …)
   oversee proxies update  refresh the CDN's IP ranges (cloudflare|fastly)
   oversee proxies         show the CDN mode and range count

@@ -218,6 +218,9 @@ type Options struct {
 	Proxies   *TrustedProxies
 	Provider  Provider
 	OnlyProxy bool
+
+	// Diagnostic endpoint for `oversee cdn-test` (nil = always 404).
+	Probe *Probe
 }
 
 // New returns a handler that forwards valid requests to upstream and answers
@@ -253,6 +256,18 @@ func newWithClock(upstream *url.URL, entries func() map[string]Entry, appKeys fu
 			// Already misbehaving: don't even spend CPU on the MAC.
 			if o.Stats != nil {
 				o.Stats.reject("blocked")
+			}
+			http.NotFound(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, ProbePath) {
+			if o.Probe.match(strings.TrimPrefix(r.URL.Path, ProbePath), t) {
+				writeProbe(w, o.Probe.report(r, ip, viaProxy))
+				return
+			}
+			// wrong/expired nonce: indistinguishable from any other bad request
+			if o.Limiter != nil {
+				o.Limiter.Fail(ip, t)
 			}
 			http.NotFound(w, r)
 			return

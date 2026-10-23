@@ -178,6 +178,14 @@ class S {
       "share_locked": "Locked file",
       "settings_creator_id_copied": "Creator ID copied",
       "clipboard_added": "Added from clipboard",
+      "gate_off_warning":
+          "Without the gate, anyone who decodes this file can use the config in any app. Keep it on unless you know why not.",
+      "gate_unsupported_notice":
+          "This config can't use the server gate (it needs a WebSocket or HTTPUpgrade transport). Anyone who decodes the file could use it in any app.",
+      "gate_unavailable_notice":
+          "This build has no gate key, so the lock only hides the config inside the app. A decoded config would work in any app.",
+      "connect_failed_gated":
+          "Could not connect. Check that your phone's date and time are correct, and that the file hasn't been revoked by its owner.",
     },
   };
 }

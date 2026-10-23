@@ -126,7 +126,11 @@ Future<void> _connect(BuildContext context, WidgetRef ref, VpnConfig c) async {
     );
     if (st.phase != TunnelPhase.connected) {
       await svc.stop();
-      messenger.showSnackBar(SnackBar(content: Text(s.t("connect_failed"))));
+      // A gated server refuses a wrong day silently, so say what to check.
+      messenger.showSnackBar(SnackBar(
+          duration: const Duration(seconds: 6),
+          content:
+              Text(s.t(c.gated ? "connect_failed_gated" : "connect_failed"))));
       return;
     }
   } on PlatformException catch (e) {

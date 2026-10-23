@@ -28,6 +28,7 @@ type Paths struct {
 	Keys    string
 	Stats   string
 	Proxies string // CDN IP ranges (proxies.txt)
+	Probe   string // nonce for `oversee cdn-test` (probe.nonce)
 	Conf    string
 	Certs   string
 }
@@ -43,6 +44,7 @@ func DefaultPaths() Paths {
 		Keys:    filepath.Join(dir, "keys.txt"),
 		Stats:   filepath.Join(dir, "stats.json"),
 		Proxies: filepath.Join(dir, "proxies.txt"),
+		Probe:   filepath.Join(dir, "probe.nonce"),
 		Conf:    filepath.Join(dir, "gate.conf"),
 		Certs:   filepath.Join(dir, "certs"),
 	}

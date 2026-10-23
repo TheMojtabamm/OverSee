@@ -40,7 +40,11 @@ class _ShareSheetState extends State<_ShareSheet> {
   bool _lock = false;
   bool _showQr = false;
   bool _busy = false;
-  bool _gate = false;
+
+  /// Locking with the server gate is the default whenever it is possible: without it a
+  /// decoded file's config works in any app.
+  late bool _gate =
+      GateToken.available && XrayConfigBuilder.supportsGate(widget.config.raw);
   Duration? _ttl = const Duration(days: 7);
   final _adCtrl = TextEditingController();
   final _tgCtrl = TextEditingController();
@@ -243,8 +247,12 @@ class _ShareSheetState extends State<_ShareSheet> {
                 ],
                 onChanged: (v) => setState(() => _ttl = v),
               ),
-              if (GateToken.available) ...[
-                const SizedBox(height: 6),
+              const SizedBox(height: 6),
+              if (!GateToken.available)
+                _Warn(text: s.t("gate_unavailable_notice"))
+              else if (!XrayConfigBuilder.supportsGate(c.raw))
+                _Warn(text: s.t("gate_unsupported_notice"))
+              else ...[
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   value: _gate,
@@ -255,6 +263,7 @@ class _ShareSheetState extends State<_ShareSheet> {
                       style: TextStyle(
                           fontSize: 12.5, color: col.muted, height: 1.4)),
                 ),
+                if (!_gate) _Warn(text: s.t("gate_off_warning")),
               ],
             ] else ...[
               Row(
@@ -306,6 +315,37 @@ class _ShareSheetState extends State<_ShareSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// A caution box: the locked file will hide the config inside the app, but a decoded
+/// config would then work anywhere.
+class _Warn extends StatelessWidget {
+  final String text;
+  const _Warn({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: c.warn.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded, size: 20, color: c.warn),
+          const SizedBox(width: 10),
+          Expanded(
+              child: Text(text,
+                  style:
+                      TextStyle(fontSize: 12.5, height: 1.45, color: c.warn))),
+        ],
       ),
     );
   }

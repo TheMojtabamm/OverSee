@@ -117,6 +117,7 @@ func RunGate(p Paths, args []string) error {
 		Proxies:   tp,
 		Provider:  prov,
 		OnlyProxy: *onlyProxy,
+		Probe:     &gate.Probe{File: p.Probe},
 	})
 	log.Printf("gate: %d lock(s), %d app key(s), upstream %s", len(al.Get()), len(kf.Get()), *upstream)
 

@@ -55,7 +55,7 @@ func typ(m Model, text string) Model {
 
 func TestEmptyStatusTellsWhatToDo(t *testing.T) {
 	v := newModel(t).View()
-	for _, want := range []string{"oversee", "Status", "Locks", "Keys", "Setup", "Logs", "add an app key", "set your domain"} {
+	for _, want := range []string{"oversee", "Status", "Locks", "Keys", "Setup", "Logs", "Needs attention", "No app key"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q in:\n%s", want, v)
 		}

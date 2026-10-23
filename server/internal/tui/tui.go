@@ -77,6 +77,7 @@ type Model struct {
 	statsAge time.Duration
 	rejects  map[string]int
 	logs     string
+	problems []oversee.Finding
 
 	sel      int // selection in Locks / Keys
 	input    textinput.Model
@@ -103,6 +104,12 @@ func (m *Model) refresh() {
 	oversee.SortLocks(m.locks)
 	m.keys, _ = m.p.ListKeys()
 	m.settings = m.p.LoadSettings()
+	m.problems = nil
+	for _, f := range m.p.Doctor(oversee.RealDoctorEnv()) {
+		if f.Level != oversee.OK {
+			m.problems = append(m.problems, f)
+		}
+	}
 	m.stats, m.rejects, m.statsAge = map[string]gate.LockSnapshot{}, nil, -1
 	if sn, err := gate.ReadSnapshot(m.p.Stats); err == nil {
 		for _, l := range sn.Locks {
@@ -473,18 +480,21 @@ func (m Model) viewStatus() string {
 		row("Config dir", m.p.Dir),
 	}
 	out := boxStyle.Render(strings.Join(rows, "\n"))
-	var todo []string
-	if len(m.keys) == 0 {
-		todo = append(todo, "• add an app key  →  Keys (the gate refuses everyone until one exists)")
-	}
-	if m.settings.Domain == "" && m.settings.Plain == "" {
-		todo = append(todo, "• set your domain  →  Setup")
-	}
-	if len(m.locks) == 0 {
-		todo = append(todo, "• add a lock line from the app  →  Locks")
-	}
-	if len(todo) > 0 {
-		out += "\n\n" + headerStyle.Render("Next steps") + "\n" + warnStyle.Render(strings.Join(todo, "\n"))
+	if len(m.problems) > 0 {
+		var lines []string
+		for _, f := range m.problems {
+			mark, st := "⚠", warnStyle
+			if f.Level == oversee.Fail {
+				mark, st = "✗", badStyle
+			}
+			lines = append(lines, st.Render(fmt.Sprintf("%s %s", mark, f.Title)))
+			if f.Fix != "" {
+				lines = append(lines, dimStyle.Render("    → "+f.Fix))
+			}
+		}
+		out += "\n\n" + headerStyle.Render("Needs attention") + "\n" + strings.Join(lines, "\n")
+	} else {
+		out += "\n\n" + goodStyle.Render("✓ setup looks right") + dimStyle.Render("  (oversee doctor has the details)")
 	}
 	return out
 }

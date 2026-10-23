@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -210,5 +211,82 @@ func TestTrustedProxiesFileReloadKeepsPreviousOnBadEdit(t *testing.T) {
 	}
 	if tp2, err := LoadTrustedProxies(t.TempDir() + "/missing"); err != nil || tp2.Len() != 0 {
 		t.Fatalf("missing file = nothing trusted: %v", err)
+	}
+}
+
+func TestProbeEndpoint(t *testing.T) {
+	up, _ := startUpstream(t)
+	dir := t.TempDir()
+	file := dir + "/probe.nonce"
+	nonce := "0123456789abcdef0123456789abcdef"
+	write := func(n string, exp time.Time) {
+		os.WriteFile(file, []byte(n+" "+strconv.FormatInt(exp.Unix(), 10)+"\n"), 0o600)
+	}
+	lim := NewLimiter(3, time.Minute, time.Hour)
+	g := httptest.NewServer(newWithClock(up, list, func() [][]byte { return appKeys },
+		Options{Probe: &Probe{File: file}, Limiter: lim}, func() time.Time { return now }))
+	defer g.Close()
+	get := func(path string, hdr string) (int, string) {
+		rq, _ := http.NewRequest("GET", g.URL+path, nil)
+		if hdr != "" {
+			rq.Header.Set(Header, hdr)
+		}
+		resp, err := http.DefaultClient.Do(rq)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return resp.StatusCode, string(b)
+	}
+
+	// no file => the probe URL does not exist
+	if c, _ := get(ProbePath+nonce, ""); c != 404 {
+		t.Fatalf("no active probe must 404, got %d", c)
+	}
+	// active nonce: reports the header WITHOUT revealing it
+	write(nonce, now.Add(5*time.Minute))
+	secret := "super-secret-token-value"
+	code, body := get(ProbePath+nonce, secret)
+	if code != 200 || !strings.Contains(body, `"headerPresent":true`) || !strings.Contains(body, HeaderDigest(secret)) {
+		t.Fatalf("%d %s", code, body)
+	}
+	if strings.Contains(body, secret) {
+		t.Fatal("the probe must never echo the token")
+	}
+	// no header => says so
+	if _, body := get(ProbePath+nonce, ""); !strings.Contains(body, `"headerPresent":false`) {
+		t.Fatalf("%s", body)
+	}
+	// wrong nonce, short nonce and expired nonce are all plain 404s
+	if c, _ := get(ProbePath+"ffffffffffffffffffffffffffffffff", ""); c != 404 {
+		t.Fatal("wrong nonce")
+	}
+	if c, _ := get(ProbePath+"short", ""); c != 404 {
+		t.Fatal("short nonce")
+	}
+	write(nonce, now.Add(-time.Second))
+	if c, _ := get(ProbePath+nonce, ""); c != 404 {
+		t.Fatal("expired nonce must 404")
+	}
+}
+
+func TestProbeBruteForceIsLimited(t *testing.T) {
+	up, _ := startUpstream(t)
+	file := t.TempDir() + "/probe.nonce"
+	os.WriteFile(file, []byte("0123456789abcdef0123456789abcdef "+strconv.FormatInt(now.Add(time.Hour).Unix(), 10)), 0o600)
+	lim := NewLimiter(3, time.Minute, time.Hour)
+	g := httptest.NewServer(newWithClock(up, list, func() [][]byte { return appKeys },
+		Options{Probe: &Probe{File: file}, Limiter: lim}, func() time.Time { return now }))
+	defer g.Close()
+	for i := 0; i < 3; i++ {
+		resp, _ := http.Get(g.URL + ProbePath + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" + strconv.Itoa(i))
+		resp.Body.Close()
+	}
+	// after 3 wrong guesses even the RIGHT nonce is refused from that address
+	resp, _ := http.Get(g.URL + ProbePath + "0123456789abcdef0123456789abcdef")
+	resp.Body.Close()
+	if resp.StatusCode != 404 {
+		t.Fatalf("guessing the nonce must trip the limiter, got %d", resp.StatusCode)
 	}
 }
