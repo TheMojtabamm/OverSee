@@ -181,4 +181,13 @@ void main() {
             vless, const TunnelOptions(blockQuic: false))),
         isFalse);
   });
+
+  test("sniffed domains replace the destination IP (the server resolves names)",
+      () {
+    final inbound = (build(vless)["inbounds"] as List).first as Map;
+    final sniffing = inbound["sniffing"] as Map;
+    expect(sniffing["enabled"], isTrue);
+    expect(sniffing["routeOnly"], isFalse);
+    expect(sniffing["destOverride"], containsAll(["http", "tls"]));
+  });
 }

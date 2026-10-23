@@ -139,8 +139,11 @@ class XrayConfigBuilder {
           "settings": {"name": "xray0", "mtu": opts.mtu},
           "sniffing": {
             "enabled": true,
-            "destOverride": ["http", "tls", "quic"],
-            "routeOnly": true,
+            // The sniffed domain REPLACES the destination IP, so the proxy server resolves
+            // the name itself (right CDN node, nothing depends on the client's DNS answer).
+            // QUIC is blocked in routing, so it is not sniffed.
+            "destOverride": ["http", "tls"],
+            "routeOnly": false,
           },
         },
         if (opts.probe != null)
