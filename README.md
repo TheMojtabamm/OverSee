@@ -55,7 +55,7 @@ reachable around the gate), `oversee cdn-test` (does the header survive your CDN
 Builds run on GitHub Actions; no local Flutter needed.
 
 - **Test build:** *Actions → Release → Run workflow* on any branch (keep "test build" on).
-  It produces a signed APK as a downloadable artifact (kept 14 days). It uses Google's test
+  It produces a signed APK (arm64 phones, i.e. practically every phone since 2017; about 60 MB) as a downloadable artifact (kept 14 days). Every build gets a higher `versionCode`, so it installs over the previous one. It uses Google's test
   ads and doesn't need AdMob IDs.
 - **Real release:** push a tag `v1.0`; the workflow builds the signed APK and publishes it as a
   GitHub Release. It **refuses to build** without real AdMob IDs.
