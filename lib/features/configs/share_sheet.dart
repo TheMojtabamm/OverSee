@@ -102,8 +102,9 @@ class _ShareSheetState extends State<_ShareSheet> {
               value: _lock,
               onChanged: (v) => setState(() {
                 _lock = v ?? false;
-                if (_lock)
+                if (_lock) {
                   _showQr = false; // a QR would expose the plain config
+                }
               }),
               title: Text(s.t("lock_title")),
               subtitle: Text(s.t("lock_sub")),

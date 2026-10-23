@@ -32,7 +32,7 @@ dependencies:
   # QR code for sharing plain (unlocked) configs.
   qr_flutter: ^4.1.0
   # Ads (shown after a successful connect).
-  google_mobile_ads: ^5.1.0
+  google_mobile_ads: ^9.2.0
   # Configs are stored in the Android Keystore-backed secure storage, not in
   # plain SharedPreferences.
   flutter_secure_storage: ^9.2.2
