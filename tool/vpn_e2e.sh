@@ -41,16 +41,18 @@ flutter test integration_test/tunnel_e2e_test.dart -d emulator-5554 \
   --dart-define=E2E_LINK="$LINK" --dart-define=E2E_DNS="$MODE" > "$OUT/test-$MODE.log" 2>&1 &
 TEST=$!
 
+# `flutter test` only relays the app's prints late; the marker is in logcat the moment it happens.
+UP=0
 for i in $(seq 1 120); do
-  grep -q "E2E_TUNNEL_UP" "$OUT/test-$MODE.log" && break
+  if adb logcat -d 2>/dev/null | grep -q "E2E_TUNNEL_UP"; then UP=1; break; fi
   kill -0 $TEST 2>/dev/null || break
-  sleep 3
+  sleep 2
 done
 
 
-if grep -q "E2E_TUNNEL_UP" "$OUT/test-$MODE.log"; then
+if [ "$UP" = 1 ]; then
   echo "== tunnel is up; checking traffic from adb shell (goes through the VPN) =="
-  sleep 3
+  sleep 2
   {
     echo "--- routes / VPN"; adb shell ip route; adb shell dumpsys connectivity | grep -iE "VPN|Active default" | head -8
   } > "$OUT/checks-$MODE.txt" 2>&1

@@ -85,7 +85,7 @@ void main() {
     print("E2E_EXITINFO_NONJSON: ${info == null ? 'null (ok)' : 'unexpected'}");
 
     // Give the host script time to run its adb-shell checks through the tunnel.
-    await Future<void>.delayed(const Duration(seconds: 50));
+    await Future<void>.delayed(const Duration(seconds: 80));
     // ignore: avoid_print
     print("E2E_STATES: $seen");
     await svc.stop();
