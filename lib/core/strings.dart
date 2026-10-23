@@ -115,6 +115,12 @@ class S {
       "exp_never": "Never",
       "file_expired": "This file has expired. Ask the owner for a new one.",
       "expired": "Expired",
+      "import_invalid": "Invalid or unsupported file.",
+      "import_too_big": "That is too large to be a config.",
+      "incoming_title": "Import into Oversea?",
+      "incoming_body":
+          "A file or text was shared with Oversea. Only import files from sources you trust.",
+      "imported": "Imported",
     },
     "fa": {
       "tab_configs": "کانفیگ‌ها",
@@ -214,6 +220,12 @@ class S {
       "exp_never": "هرگز",
       "file_expired": "این فایل منقضی شده است. از صاحبش فایل جدید بخواهید.",
       "expired": "منقضی",
+      "import_invalid": "فایل نامعتبر یا پشتیبانی‌نشده.",
+      "import_too_big": "این برای یک کانفیگ بیش از حد بزرگ است.",
+      "incoming_title": "وارد Oversea شود؟",
+      "incoming_body":
+          "فایل یا متنی با Oversea به اشتراک گذاشته شد. فقط فایل‌های منابع مورد اعتماد را وارد کنید.",
+      "imported": "وارد شد",
     },
   };
 }

@@ -28,11 +28,37 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
+        // Native lock core (libovs.so). The secrets reach C++ as masked hex from the
+        // environment (CI: LOCK_Pn_M / GATE_KEY_M / LOCK_MASK from tool/mask_secrets.dart);
+        // for local builds the plain LOCK_P1..P4 / GATE_KEY are accepted and left unmasked.
+        // They are NOT passed to Dart in release builds, so the Dart snapshot holds none.
+        fun secret(masked: String, plain: String) =
+            System.getenv(masked)?.takeIf { it.isNotBlank() } ?: System.getenv(plain) ?: ""
+        externalNativeBuild {
+            cmake {
+                arguments += listOf(
+                    "-DOVS_P1=${secret("LOCK_P1_M", "LOCK_P1")}",
+                    "-DOVS_P2=${secret("LOCK_P2_M", "LOCK_P2")}",
+                    "-DOVS_P3=${secret("LOCK_P3_M", "LOCK_P3")}",
+                    "-DOVS_P4=${secret("LOCK_P4_M", "LOCK_P4")}",
+                    "-DOVS_GATE=${secret("GATE_KEY_M", "GATE_KEY")}",
+                    "-DOVS_MASK=${System.getenv("LOCK_MASK") ?: ""}",
+                )
+            }
+        }
+
         // AdMob application id. Defaults to Google's public TEST id; CI sets
         // ADMOB_APP_ID from a secret for real builds.
         manifestPlaceholders["admobAppId"] =
             System.getenv("ADMOB_APP_ID")?.takeIf { it.isNotBlank() }
                 ?: "ca-app-pub-3940256099942544~3347511713"
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     buildTypes {

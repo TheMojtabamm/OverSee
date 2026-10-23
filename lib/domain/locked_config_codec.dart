@@ -5,6 +5,7 @@ import "dart:typed_data";
 import "package:cryptography/cryptography.dart";
 
 import "creator_identity.dart";
+import "native_core.dart";
 import "secret_mask.dart";
 
 /// Locked-config system (format v3).
@@ -70,7 +71,13 @@ class LockedConfigCodec {
           SecretMask.unmask(_embedded[i], _maskHex, i)
       ];
 
-  static bool get hasKey => _embedded.every((p) => p.isNotEmpty);
+  /// Test hook: set false to force the pure-Dart derivation.
+  static bool preferNative = true;
+
+  static NativeCore? get _native => preferNative ? NativeCore.instance : null;
+
+  static bool get hasKey =>
+      (_native?.hasLockKey ?? false) || _embedded.every((p) => p.isNotEmpty);
 
   /// Fixed mixing constant for key assembly (part of the format, not a secret).
   static const List<int> _mask = [
@@ -106,6 +113,12 @@ class LockedConfigCodec {
   /// makes every file's key unique, and the stretch makes deriving it costly to
   /// repeat at scale.
   static Future<SecretKey> _deriveKey(List<int> salt) async {
+    final n = _native;
+    if (n != null && n.hasLockKey) {
+      final k = n.deriveFileKey(keyGeneration, salt, environmentTag);
+      if (k == null) throw StateError("native key derivation failed");
+      return SecretKey(k);
+    }
     final hmac = Hmac.sha256();
     final secret = SecretKey([
       ..._assembleSecret(),

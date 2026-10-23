@@ -4,6 +4,7 @@ import "dart:math";
 import "package:crypto/crypto.dart";
 
 import "locked_config_codec.dart";
+import "native_core.dart";
 import "secret_mask.dart";
 
 /// Client token for the Oversea gate (server/internal/gate).
@@ -26,7 +27,10 @@ class GateToken {
   /// The real app key (the embedded value is masked in CI builds; see SecretMask).
   static String get _appKey => SecretMask.unmask(_embeddedKey, _maskHex, 4);
 
-  static bool get available => _embeddedKey.isNotEmpty;
+  static bool get available =>
+      (LockedConfigCodec.preferNative &&
+          (NativeCore.instance?.hasGateKey ?? false)) ||
+      _embeddedKey.isNotEmpty;
 
   /// Header name the gate reads.
   static const header = "X-Oversea-Auth";
@@ -44,9 +48,19 @@ class GateToken {
       .substring(0, 16);
 
   /// Token for a gated lock using this build's app key.
-  static String current(String code, String creatorFp, {DateTime? now}) =>
-      forKey(_appKey, code, creatorFp, now ?? DateTime.now(),
-          envTag: LockedConfigCodec.environmentTag);
+  static String current(String code, String creatorFp, {DateTime? now}) {
+    final t = now ?? DateTime.now();
+    final n = LockedConfigCodec.preferNative ? NativeCore.instance : null;
+    if (n != null && n.hasGateKey) {
+      final day = t.toUtc().millisecondsSinceEpoch ~/ 86400000;
+      final mac =
+          n.gateMac(code, creatorFp, day, LockedConfigCodec.environmentTag);
+      if (mac == null) throw StateError("native gate token failed");
+      return "${codeId(code)}.$day.$mac";
+    }
+    return forKey(_appKey, code, creatorFp, t,
+        envTag: LockedConfigCodec.environmentTag);
+  }
 
   /// [envTag] is "" in a clean environment (exactly what the server computes). A
   /// tampered environment mixes in a tag, so its token is silently wrong.

@@ -7,11 +7,8 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 
 import "../../core/log.dart";
 import "../../core/strings.dart";
-import "../../domain/ad_content.dart";
-import "../../domain/config_parser.dart";
-import "../../domain/locked_config_codec.dart";
-import "../../domain/vpn_config.dart";
 import "../../providers.dart";
+import "importer.dart";
 
 class AddScreen extends ConsumerStatefulWidget {
   const AddScreen({super.key});
@@ -51,30 +48,11 @@ class _AddScreenState extends ConsumerState<AddScreen> {
     _ctrl.text = t;
   }
 
-  /// Add whatever is in the box: plain Xray config lines, or a pasted blob.
+  /// Add whatever is in the box: plain Xray config lines, or a pasted locked blob.
   Future<void> _addText() async {
-    final s = S.of(context);
-    final text = _ctrl.text.trim();
-    if (text.isEmpty) return;
-    try {
-      if (LockedConfigCodec.looksLocked(text)) {
-        await _importLocked(text);
-        return;
-      }
-      final all = ConfigParser.parseMany(text);
-      final xray = all.where((c) => c.protocol.isXray).toList();
-      if (xray.isEmpty) {
-        _say(s.t("no_xray"), ok: false);
-        return;
-      }
-      await ref.read(configsProvider.notifier).addAll(xray);
-      final skipped = all.length - xray.length;
-      _say("+${xray.length}${skipped > 0 ? " (−$skipped)" : ""}", ok: true);
-      await _done();
-    } catch (e) {
-      Log.d("add failed: $e");
-      _say("Error", ok: false);
-    }
+    final text = _ctrl.text;
+    if (text.trim().isEmpty) return;
+    await _import(text);
   }
 
   Future<void> _pickFile() async {
@@ -82,57 +60,30 @@ class _AddScreenState extends ConsumerState<AddScreen> {
       final res = await FilePicker.platform.pickFiles(withData: true);
       final bytes = res?.files.single.bytes;
       if (bytes == null) return;
-      await _importLocked(utf8.decode(bytes));
+      await _import(utf8.decode(bytes));
     } catch (e) {
       Log.d("pick failed: $e");
-      _say("Could not read file", ok: false);
+      if (mounted) _say(S.of(context).t("import_invalid"), ok: false);
     }
   }
 
-  Future<void> _importLocked(String blob) async {
-    final s = S.of(context);
-    if (!LockedConfigCodec.hasKey) {
-      _say(s.t("no_key"), ok: false);
-      return;
-    }
-    final ConfigEnvelope env;
+  Future<void> _import(String text) async {
     try {
-      env = await LockedConfigCodec.decodeConfig(blob);
-    } catch (_) {
-      // Deliberately uninformative: don't tell an attacker which check failed.
-      _say("Invalid or unsupported file", ok: false);
-      return;
+      final out = await Importer.fromText(text);
+      if (!mounted) return;
+      if (!out.isOk) {
+        _say(S.of(context).t(out.errorKey!), ok: false);
+        return;
+      }
+      await ref.read(configsProvider.notifier).addAll(out.configs);
+      _say(
+          "+${out.configs.length}${out.skipped > 0 ? " (−${out.skipped})" : ""}",
+          ok: true);
+      await _done();
+    } catch (e) {
+      Log.d("import failed: $e");
+      if (mounted) _say(S.of(context).t("import_invalid"), ok: false);
     }
-    if (env.isExpired()) {
-      _say(s.t("file_expired"), ok: false);
-      return;
-    }
-    final parsed = ConfigParser.parseMany(env.config)
-        .where((c) => c.protocol.isXray)
-        .toList();
-    if (parsed.isEmpty) {
-      _say(s.t("no_xray"), ok: false);
-      return;
-    }
-    // Locked configs keep their server hidden and cannot be copied or re-shared.
-    final stored = parsed
-        .map((c) => VpnConfig(
-              id: c.id,
-              name: c.name,
-              protocol: c.protocol,
-              raw: c.raw,
-              source: "locked",
-              adText: AdContent.text(env.adText),
-              telegramUrl: AdContent.channelUrl(env.telegramUrl),
-              locked: true,
-              creator: env.creator,
-              gateCode: env.gateCode,
-              expiresAt: env.expiresAt,
-            ))
-        .toList();
-    await ref.read(configsProvider.notifier).addAll(stored);
-    _say("+${stored.length}", ok: true);
-    await _done();
   }
 
   @override

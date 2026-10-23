@@ -20,11 +20,28 @@ jobs:
       - name: Analyze
         run: flutter analyze --fatal-infos
       # Dummy key parts: tests only need *a* key, not the real one.
-      - name: Test
+      - name: Native core — C++ tests (SHA-256/HMAC vectors, ASan+UBSan)
+        run: |
+          g++ -std=c++17 -Wall -Wextra -O1 -fsanitize=address,undefined \
+            -I android/app/src/main/cpp tool/native_test/test_core.cpp \
+            android/app/src/main/cpp/sha256.cpp android/app/src/main/cpp/ovs_core.cpp -o /tmp/test_core
+          /tmp/test_core
+      - name: Test (Dart derivation)
         run: >
           flutter test
           --dart-define=LOCK_P1=aaaaaaaaaaaaaaaa --dart-define=LOCK_P2=bbbbbbbbbbbbbbbb
           --dart-define=LOCK_P3=cccccccccccccccc --dart-define=LOCK_P4=dddddddddddddddd
+          --dart-define=GATE_KEY=gate-dev-key
+      # Native and Dart must derive the same keys/tokens, with secrets plain and masked.
+      - name: Test (native == Dart, plain and masked)
+        run: |
+          for MASKED in 0 1; do
+            MASKED=$MASKED tool/build_native_host.sh /tmp/libovs_host.so
+            OVS_NATIVE_LIB=/tmp/libovs_host.so flutter test test/native_core_test.dart \
+              --dart-define=LOCK_P1=aaaaaaaaaaaaaaaa --dart-define=LOCK_P2=bbbbbbbbbbbbbbbb \
+              --dart-define=LOCK_P3=cccccccccccccccc --dart-define=LOCK_P4=dddddddddddddddd \
+              --dart-define=GATE_KEY=gate-dev-key
+          done
 
   xray-config:
     # Generates configs from the Dart builder and loads each with Xray-core's own
