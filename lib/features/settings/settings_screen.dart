@@ -36,7 +36,7 @@ class SettingsScreen extends ConsumerWidget {
           ThemeMode.dark => s.t("theme_dark"),
         };
     String dnsLabel(DnsPreset d) => switch (d) {
-          DnsPreset.tunnel => "Plain (via tunnel)",
+          DnsPreset.tunnel => "Off (plain DNS)",
           DnsPreset.cloudflare => "Cloudflare DoH",
           DnsPreset.google => "Google DoH",
           DnsPreset.quad9 => "Quad9 DoH",

@@ -16,7 +16,9 @@ import "package:oversea/data/exit_ip.dart";
 import "package:oversea/data/identity_store.dart";
 import "package:oversea/data/tunnel_service.dart";
 import "package:oversea/domain/vpn_config.dart";
+import "package:oversea/features/configs/gate_line_card.dart";
 import "package:oversea/features/configs/share_sheet.dart";
+import "package:oversea/features/settings/gate_allowlist_screen.dart";
 import "package:oversea/providers.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
@@ -246,6 +248,38 @@ void main() {
         then: (t) async {
       final ctx = t.element(find.byType(Scaffold).first);
       showShareSheet(ctx, _samples.first);
+      for (var i = 0; i < 6; i++) {
+        await t.pump(const Duration(milliseconds: 150));
+      }
+    });
+  });
+
+  const sampleLine =
+      "0123456789abcdef0123456789abcdef 3FA9-0C21-B7D4-9E10 Channel_gift";
+
+  testWidgets("gate line dialog", (t) async {
+    await _show(t, shot: "gate_dialog_dark", configs: _samples, selected: "1",
+        then: (t) async {
+      final ctx = t.element(find.byType(Scaffold).first);
+      showGateLineDialog(ctx, sampleLine);
+      for (var i = 0; i < 6; i++) {
+        await t.pump(const Duration(milliseconds: 150));
+      }
+    });
+    expect(find.text("Allow this lock on your server"), findsOneWidget);
+    expect(find.text("Copy line"), findsOneWidget);
+    await t.tap(find.text("Copy line"));
+    await t.pump(const Duration(milliseconds: 100));
+    expect(find.text("Copied"), findsOneWidget);
+    await t.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets("gate allow-list screen", (t) async {
+    await _show(t, shot: "gate_allowlist_dark", configs: _samples,
+        then: (t) async {
+      final ctx = t.element(find.byType(Scaffold).first);
+      Navigator.of(ctx).push(
+          MaterialPageRoute<void>(builder: (_) => const GateAllowListScreen()));
       for (var i = 0; i < 6; i++) {
         await t.pump(const Duration(milliseconds: 150));
       }

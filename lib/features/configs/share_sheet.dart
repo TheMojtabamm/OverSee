@@ -1,7 +1,8 @@
-import "dart:convert";
+import "dart:io";
 
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
+import "package:path_provider/path_provider.dart";
 import "package:qr_flutter/qr_flutter.dart";
 import "package:share_plus/share_plus.dart";
 
@@ -15,6 +16,7 @@ import "../../domain/locked_config_codec.dart";
 import "../../domain/gate_token.dart";
 import "../../domain/vpn_config.dart";
 import "../../domain/xray_config_builder.dart";
+import "gate_line_card.dart";
 
 Future<void> showShareSheet(BuildContext context, VpnConfig c) {
   return showModalBottomSheet(
@@ -98,17 +100,20 @@ class _ShareSheetState extends State<_ShareSheet> {
                   ? c.name.replaceAll(RegExp(r"\s+"), "_")
                   : "");
           await store.addGateLine(line);
-          if (mounted) await _showAllowListLine(line);
+          if (mounted) await showGateLineDialog(context, line);
         }
-        final name = "oversea_${DateTime.now().millisecondsSinceEpoch}.ovsea";
-        // File only — no plaintext, and no blob in the message text.
-        await Share.shareXFiles([
-          XFile.fromData(
-            Uint8List.fromList(utf8.encode(blob)),
-            name: name,
-            mimeType: "application/octet-stream",
-          )
-        ]);
+        // A real file with the right name: shareXFiles(XFile.fromData) ignores the name on
+        // Android and the receiver saw "….bin".
+        final dir = await getTemporaryDirectory();
+        for (final f in dir.listSync().whereType<File>()) {
+          if (f.path.endsWith(".ovsea")) f.deleteSync(); // earlier exports
+        }
+        final file = File(
+            "${dir.path}/oversea_${DateTime.now().millisecondsSinceEpoch}.ovsea");
+        await file.writeAsString(blob, flush: true);
+        // File only: no plaintext, and no blob in the message text.
+        await Share.shareXFiles(
+            [XFile(file.path, mimeType: "application/octet-stream")]);
       } else {
         await Share.share(c.raw);
       }
@@ -119,40 +124,6 @@ class _ShareSheetState extends State<_ShareSheet> {
       if (mounted) setState(() => _busy = false);
     }
   }
-
-  /// Shown once, right after locking: the creator must put this line on the server
-  /// before anyone can connect. (It stays retrievable under Settings → Gate allow-list.)
-  Future<void> _showAllowListLine(String line) => showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) {
-          final s = S.of(ctx);
-          return AlertDialog(
-            title: Text(s.t("gate_line_title")),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(s.t("gate_line_body")),
-                const SizedBox(height: 12),
-                SelectableText(line,
-                    textDirection: TextDirection.ltr,
-                    style:
-                        const TextStyle(fontFamily: "monospace", fontSize: 12)),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Clipboard.setData(ClipboardData(text: line)),
-                child: Text(s.t("copy")),
-              ),
-              FilledButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: Text(s.t("continue"))),
-            ],
-          );
-        },
-      );
 
   @override
   Widget build(BuildContext context) {

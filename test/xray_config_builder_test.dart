@@ -48,12 +48,11 @@ void main() {
   test(
       "IPv6 is dropped in the tunnel by default (no leak) and kept when enabled",
       () {
-    expect(rules(build(vless)).any((r) => (r as Map)["outboundTag"] == "block"),
-        isTrue);
-    expect(
-        rules(build(vless, const TunnelOptions(ipv6: true)))
-            .any((r) => (r as Map)["outboundTag"] == "block"),
-        isFalse);
+    bool dropsV6(Map<String, dynamic> c) => rules(c).any((r) =>
+        (r as Map)["outboundTag"] == "block" &&
+        ((r["ip"] as List?)?.contains("::/0") ?? false));
+    expect(dropsV6(build(vless)), isTrue);
+    expect(dropsV6(build(vless, const TunnelOptions(ipv6: true))), isFalse);
   });
 
   test("LAN bypass is optional", () {
@@ -169,5 +168,17 @@ void main() {
     expect((c["dns"] as Map<String, dynamic>)["servers"], contains("1.1.1.1"));
     // DoH mode keeps the rule
     expect((rules(build(vless)).first as Map)["outboundTag"], "dns-out");
+  });
+
+  test("QUIC (udp/443) is blocked by default so apps fall back to TCP", () {
+    bool quic(Map<String, dynamic> c) => rules(c).any((r) =>
+        (r as Map)["network"] == "udp" &&
+        r["port"] == "443" &&
+        r["outboundTag"] == "block");
+    expect(quic(build(vless)), isTrue);
+    expect(
+        quic(XrayConfigBuilder.buildMap(
+            vless, const TunnelOptions(blockQuic: false))),
+        isFalse);
   });
 }

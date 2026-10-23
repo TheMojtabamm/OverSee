@@ -36,6 +36,10 @@ class TunnelOptions {
   /// Adds the loopback probe proxy (see [ProbeEndpoint]).
   final ProbeEndpoint? probe;
 
+  /// Drops UDP/443 (QUIC / HTTP/3) so apps fall back to TCP at once. Many servers and CDNs
+  /// can't carry QUIC over the proxy, and Google's apps and Chrome then hang on it.
+  final bool blockQuic;
+
   /// Xray log level ("warning" normally; "info"/"debug" for diagnostics).
   final String logLevel;
 
@@ -51,6 +55,7 @@ class TunnelOptions {
     this.gateToken,
     this.probe,
     this.logLevel = "warning",
+    this.blockQuic = true,
   });
 }
 
@@ -175,6 +180,13 @@ class XrayConfigBuilder {
           // All DNS goes to Xray's resolver (DoH through the tunnel), unless plain DNS was chosen.
           if (!plainDns)
             {"type": "field", "port": "53", "outboundTag": "dns-out"},
+          if (opts.blockQuic)
+            {
+              "type": "field",
+              "network": "udp",
+              "port": "443",
+              "outboundTag": "block"
+            },
           if (opts.bypassLan)
             {"type": "field", "ip": _lan, "outboundTag": "direct"},
           if (!opts.ipv6)

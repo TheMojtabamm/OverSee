@@ -107,9 +107,17 @@ class S {
       "gate_hint":
           "The server only accepts Oversea. A decoded link won't work in other apps. Needs the gate on your server and a WebSocket/HTTPUpgrade config.",
       "gate_unsupported": "Gate needs a WebSocket or HTTPUpgrade transport.",
-      "gate_line_title": "Add this to your server",
+      "gate_line_title": "Allow this lock on your server",
       "gate_line_body":
-          "Put this line in the gate's allow-list file (allow.txt). Delete the line later to revoke this lock and every copy of it.",
+          "Add this line to the gate's allow-list. Delete it later to revoke this lock and every copy of it.",
+      "gate_step1": "Copy the line below",
+      "gate_step2":
+          "On your server run the command (or open Locks in `oversee` and press a), then paste",
+      "gate_step3": "Share the file. It only connects after this step.",
+      "share_file": "Share the file",
+      "copy_line": "Copy line",
+      "copy_cmd": "Copy command",
+      "copied_short": "Copied",
       "gate_allowlist": "Gate allow-list",
       "gate_allowlist_hint": "Lines for the locks you created",
       "gate_allowlist_empty": "You have not created any gated locks yet.",
