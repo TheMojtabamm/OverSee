@@ -4,6 +4,10 @@ name: VPN data-path e2e
 # checks that DNS and TCP flow through the tunnel and that the UI is told "connected".
 on:
   workflow_dispatch:
+    inputs:
+      api:
+        description: "Android API level of the emulator"
+        default: "36"
   push:
     branches: [main]
     paths: ["integration_test/**", "tool/vpn_e2e.sh", ".github/workflows/vpn-e2e.yml", "android/app/src/**", "lib/data/tunnel_service.dart", "lib/domain/xray_config_builder.dart"]
@@ -40,7 +44,7 @@ jobs:
       - name: Run on the emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 36
+          api-level: ${{ inputs.api || '36' }}
           arch: x86_64
           target: google_apis
           disable-animations: true
