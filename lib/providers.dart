@@ -38,8 +38,87 @@ final configsProvider = AsyncNotifierProvider<ConfigsNotifier, List<VpnConfig>>(
 /// Selected bottom-nav tab.
 final tabProvider = StateProvider<int>((ref) => 0);
 
-/// null = follow the device language.
-final localeProvider = StateProvider<Locale?>((ref) => null);
+class ThemeModeNotifier extends Notifier<ThemeMode> {
+  @override
+  ThemeMode build() {
+    var alive = true;
+    ref.onDispose(() => alive = false);
+    ref.read(settingsStoreProvider).themeMode().then((m) {
+      if (!alive) return;
+      state = switch (m) {
+        "light" => ThemeMode.light,
+        "dark" => ThemeMode.dark,
+        _ => ThemeMode.system,
+      };
+    });
+    return ThemeMode.system;
+  }
+
+  Future<void> set(ThemeMode m) async {
+    state = m;
+    await ref.read(settingsStoreProvider).setThemeMode(switch (m) {
+          ThemeMode.light => "light",
+          ThemeMode.dark => "dark",
+          ThemeMode.system => null,
+        });
+  }
+}
+
+final themeModeProvider =
+    NotifierProvider<ThemeModeNotifier, ThemeMode>(ThemeModeNotifier.new);
+
+/// The config the big button connects. Persisted; falls back to the first config.
+class SelectedConfigNotifier extends Notifier<String?> {
+  @override
+  String? build() {
+    var alive = true;
+    ref.onDispose(() => alive = false);
+    ref.read(settingsStoreProvider).selectedConfig().then((id) {
+      if (id != null && alive && state == null) state = id;
+    });
+    return null;
+  }
+
+  Future<void> select(String? id) async {
+    state = id;
+    await ref.read(settingsStoreProvider).setSelectedConfig(id);
+  }
+}
+
+final selectedConfigIdProvider =
+    NotifierProvider<SelectedConfigNotifier, String?>(
+        SelectedConfigNotifier.new);
+
+/// The config the home screen acts on: the selected one if it still exists, else the first.
+final selectedConfigProvider = Provider<VpnConfig?>((ref) {
+  final list = ref.watch(configsProvider).valueOrNull ?? const <VpnConfig>[];
+  if (list.isEmpty) return null;
+  final id = ref.watch(selectedConfigIdProvider);
+  return list.firstWhere((c) => c.id == id, orElse: () => list.first);
+});
+
+/// When the current connection came up (for the timer); null when not connected.
+class ConnectedSinceNotifier extends Notifier<DateTime?> {
+  @override
+  DateTime? build() {
+    ref.listen(tunnelStateProvider, (_, next) {
+      final phase = next.valueOrNull?.phase;
+      if (phase == TunnelPhase.connected) {
+        state ??= DateTime.now();
+      } else {
+        state = null;
+      }
+    }, fireImmediately: true);
+    return null;
+  }
+}
+
+final connectedSinceProvider =
+    NotifierProvider<ConnectedSinceNotifier, DateTime?>(
+        ConnectedSinceNotifier.new);
+
+final onboardedProvider =
+    FutureProvider<bool>((ref) => ref.read(settingsStoreProvider).onboarded());
 
 final settingsStoreProvider = Provider<SettingsStore>((ref) => SettingsStore());
 final tunnelServiceProvider = Provider<TunnelService>((ref) => TunnelService());

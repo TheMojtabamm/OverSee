@@ -5,19 +5,16 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "core/strings.dart";
 import "features/shell/root_shell.dart";
 import "providers.dart";
-
-const accent = Color(0xFF38E1D4);
+import "ui/theme.dart";
 
 class OverseaApp extends ConsumerWidget {
   const OverseaApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final locale = ref.watch(localeProvider);
     return MaterialApp(
       title: "Oversea",
       debugShowCheckedModeBanner: false,
-      locale: locale,
       supportedLocales: S.supportedLocales,
       localizationsDelegates: const [
         S.delegate,
@@ -25,13 +22,9 @@ class OverseaApp extends ConsumerWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      themeMode: ThemeMode.system,
-      theme: ThemeData(colorSchemeSeed: accent, useMaterial3: true),
-      darkTheme: ThemeData(
-        colorSchemeSeed: accent,
-        brightness: Brightness.dark,
-        useMaterial3: true,
-      ),
+      themeMode: ref.watch(themeModeProvider),
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
       home: const RootShell(),
     );
   }

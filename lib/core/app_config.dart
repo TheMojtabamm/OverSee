@@ -19,6 +19,9 @@ class AppConfig {
   static const String _pinsCsv =
       String.fromEnvironment("TLS_PINS", defaultValue: "");
 
+  static const String version =
+      String.fromEnvironment("APP_VERSION", defaultValue: "1.0.0-beta.1");
+
   /// Public privacy policy URL (required by Google Play for VPN + ads apps).
   static const String privacyPolicyUrl =
       String.fromEnvironment("PRIVACY_POLICY_URL", defaultValue: "");

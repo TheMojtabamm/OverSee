@@ -75,9 +75,15 @@ class AdService {
   }
 
   /// Settings entry point ("Ad privacy options"), required by UMP for some regions.
-  static Future<bool> privacyOptionsRequired() async =>
-      await ConsentInformation.instance.getPrivacyOptionsRequirementStatus() ==
-      PrivacyOptionsRequirementStatus.required;
+  static Future<bool> privacyOptionsRequired() async {
+    try {
+      return await ConsentInformation.instance
+              .getPrivacyOptionsRequirementStatus() ==
+          PrivacyOptionsRequirementStatus.required;
+    } catch (_) {
+      return false; // no ads plugin (tests, desktop) or consent not initialised
+    }
+  }
 
   static Future<void> showPrivacyOptions() async {
     final done = Completer<void>();

@@ -1,16 +1,36 @@
+import "dart:io";
+
 import "package:flutter_test/flutter_test.dart";
 import "package:oversea/core/log.dart";
 import "package:oversea/core/strings.dart";
 
 void main() {
-  test("every string key exists in both fa and en", () {
-    final en = S.table["en"]!.keys.toSet();
-    final fa = S.table["fa"]!.keys.toSet();
-    expect(fa.difference(en), isEmpty, reason: "keys only in fa");
-    expect(en.difference(fa), isEmpty, reason: "keys only in en");
-    for (final lang in S.table.values) {
-      expect(lang.values.every((v) => v.trim().isNotEmpty), isTrue);
+  test(
+      "the app is English-only: one language, no empty strings, no Persian script",
+      () {
+    expect(S.table.keys.toList(), ["en"]);
+    expect(S.supportedLocales.map((l) => l.languageCode), ["en"]);
+    final persian = RegExp(r"[\u0600-\u06FF]");
+    S.table["en"]!.forEach((k, v) {
+      expect(v.trim(), isNotEmpty, reason: k);
+      expect(persian.hasMatch(v), isFalse, reason: "$k contains Persian text");
+    });
+  });
+
+  test("every string key used in lib/ exists in the table", () {
+    final used = <String>{};
+    final re = RegExp(r"""\.t\(\s*["']([a-z0-9_]+)["']\s*\)""");
+    for (final f
+        in Directory("lib").listSync(recursive: true).whereType<File>()) {
+      if (!f.path.endsWith(".dart")) continue;
+      for (final m in re.allMatches(f.readAsStringSync())) {
+        used.add(m.group(1)!);
+      }
     }
+    final missing = used.difference(S.table["en"]!.keys.toSet());
+    expect(missing, isEmpty, reason: "keys used but not defined: $missing");
+    expect(
+        used.length, greaterThan(40)); // the scan really found the call sites
   });
 
   test("Log.redact scrubs config URIs", () {

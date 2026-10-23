@@ -5,7 +5,6 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:flutter/services.dart";
 import "package:url_launcher/url_launcher.dart";
 
-import "../../app.dart";
 import "../../core/log.dart";
 import "../../core/strings.dart";
 import "../../data/ad_service.dart";
@@ -16,6 +15,7 @@ import "../../domain/tunnel_settings.dart";
 import "../../domain/vpn_config.dart";
 import "../../domain/xray_config_builder.dart";
 import "../../providers.dart";
+import "../../ui/theme.dart";
 
 /// Tap on a config: disconnect if it is the active one, otherwise connect.
 ///
@@ -69,7 +69,7 @@ Future<void> _connect(BuildContext context, WidgetRef ref, VpnConfig c) async {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.vpn_lock, size: 40, color: accent),
+        icon: Icon(Icons.vpn_lock_rounded, size: 40, color: ctx.colors.brand),
         title: Text(s.t("disclosure_title")),
         content: SingleChildScrollView(child: Text(s.t("disclosure_body"))),
         actions: [
@@ -163,7 +163,7 @@ Future<bool> _showSponsored(
     context: context,
     barrierDismissible: false,
     builder: (ctx) => AlertDialog(
-      icon: const Icon(Icons.campaign, size: 40, color: accent),
+      icon: Icon(Icons.campaign_rounded, size: 40, color: ctx.colors.brand),
       title: Text(s.t("sponsored")),
       content: Column(
         mainAxisSize: MainAxisSize.min,

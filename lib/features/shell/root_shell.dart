@@ -4,9 +4,12 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../../core/strings.dart";
 import "../../data/incoming_service.dart";
 import "../../providers.dart";
+import "../../ui/theme.dart";
 import "../add/add_screen.dart";
 import "../add/importer.dart";
-import "../configs/configs_screen.dart";
+import "../home/home_screen.dart";
+import "../onboarding/onboarding_screen.dart";
+import "../settings/settings_screen.dart";
 
 class RootShell extends ConsumerStatefulWidget {
   const RootShell({super.key});
@@ -61,21 +64,43 @@ class _RootShellState extends ConsumerState<RootShell> {
   Widget build(BuildContext context) {
     final s = S.of(context);
     final tab = ref.watch(tabProvider);
+    final onboarded = ref.watch(onboardedProvider);
+
+    // First launch: three intro pages, then never again.
+    if (onboarded.valueOrNull == false) {
+      return OnboardingScreen(onDone: () async {
+        await ref.read(settingsStoreProvider).setOnboarded();
+        ref.invalidate(onboardedProvider);
+      });
+    }
+
     return Scaffold(
       body: IndexedStack(
         index: tab,
-        children: const [ConfigsScreen(), AddScreen()],
+        children: const [HomeScreen(), AddScreen(), SettingsScreen()],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: tab,
-        onDestinationSelected: (i) => ref.read(tabProvider.notifier).state = i,
-        destinations: [
-          NavigationDestination(
-              icon: const Icon(Icons.vpn_lock), label: s.t("tab_configs")),
-          NavigationDestination(
-              icon: const Icon(Icons.add_circle_outline),
-              label: s.t("tab_add")),
-        ],
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: context.colors.outline))),
+        child: NavigationBar(
+          selectedIndex: tab,
+          onDestinationSelected: (i) =>
+              ref.read(tabProvider.notifier).state = i,
+          destinations: [
+            NavigationDestination(
+                icon: const Icon(Icons.shield_outlined),
+                selectedIcon: const Icon(Icons.shield_rounded),
+                label: s.t("tab_home")),
+            NavigationDestination(
+                icon: const Icon(Icons.add_circle_outline_rounded),
+                selectedIcon: const Icon(Icons.add_circle_rounded),
+                label: s.t("tab_add")),
+            NavigationDestination(
+                icon: const Icon(Icons.tune_rounded),
+                selectedIcon: const Icon(Icons.tune_rounded),
+                label: s.t("tab_settings")),
+          ],
+        ),
       ),
     );
   }

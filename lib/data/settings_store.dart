@@ -32,6 +32,30 @@ class SettingsStore {
     await p.setStringList(_trusted, cur.toList());
   }
 
+  static const _selected = "selected_config_v1";
+  static const _theme = "theme_v1";
+  static const _onboarded = "onboarded_v1";
+
+  Future<String?> selectedConfig() async =>
+      (await SharedPreferences.getInstance()).getString(_selected);
+  Future<void> setSelectedConfig(String? id) async {
+    final p = await SharedPreferences.getInstance();
+    id == null ? await p.remove(_selected) : await p.setString(_selected, id);
+  }
+
+  /// "light", "dark", or null = follow the device.
+  Future<String?> themeMode() async =>
+      (await SharedPreferences.getInstance()).getString(_theme);
+  Future<void> setThemeMode(String? mode) async {
+    final p = await SharedPreferences.getInstance();
+    mode == null ? await p.remove(_theme) : await p.setString(_theme, mode);
+  }
+
+  Future<bool> onboarded() async =>
+      (await SharedPreferences.getInstance()).getBool(_onboarded) ?? false;
+  Future<void> setOnboarded() async =>
+      (await SharedPreferences.getInstance()).setBool(_onboarded, true);
+
   Future<bool> disclosureAccepted() async =>
       (await SharedPreferences.getInstance()).getBool(_disclosure) ?? false;
 
