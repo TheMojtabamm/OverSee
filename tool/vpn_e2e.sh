@@ -10,18 +10,31 @@ PKG=com.oversea.oversea
 UUID=11111111-2222-3333-4444-555555555555
 OUT=build/vpn_e2e; mkdir -p "$OUT"
 
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=e2e.test" \
+  -keyout "$OUT/key.pem" -out "$OUT/cert.pem" >/dev/null 2>&1
+CERT="$PWD/$OUT/cert.pem"; KEY="$PWD/$OUT/key.pem"
+
 cat > "$OUT/server.json" <<EOF
 {"log":{"loglevel":"warning"},
  "inbounds":[{"listen":"0.0.0.0","port":8443,"protocol":"vless",
    "settings":{"clients":[{"id":"$UUID"}],"decryption":"none"},
-   "streamSettings":{"network":"tcp"}}],
+   "streamSettings":{"network":"tcp"}},
+  {"listen":"0.0.0.0","port":8444,"protocol":"vless",
+   "settings":{"clients":[{"id":"$UUID"}],"decryption":"none"},
+   "streamSettings":{"network":"ws","wsSettings":{"path":"/ws"},"security":"tls",
+     "tlsSettings":{"certificates":[{"certificateFile":"$CERT","keyFile":"$KEY"}]}}}],
  "outbounds":[{"protocol":"freedom"}]}
 EOF
 "$XRAY" run -c "$OUT/server.json" > "$OUT/server.log" 2>&1 &
 SERVER=$!
 sleep 2
 
-LINK="vless://$UUID@10.0.2.2:8443?encryption=none&security=none&type=tcp"
+link_for() {
+  case "$1" in
+    ws) echo "vless://$UUID@10.0.2.2:8444?encryption=none&security=tls&sni=e2e.test&allowInsecure=1&type=ws&path=%2Fws&host=e2e.test" ;;
+    *)  echo "vless://$UUID@10.0.2.2:8443?encryption=none&security=none&type=tcp" ;;
+  esac
+}
 
 echo "== build + install the debug app, pre-grant the VPN consent =="
 flutter build apk --debug --target-platform android-x64 >/dev/null 2>"$OUT/build.err" || { tail -20 "$OUT/build.err"; exit 1; }
@@ -33,12 +46,12 @@ adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS 2>/dev/null || tru
 KEEP=$!
 
 run_case() {
-  MODE="$1"
-  echo; echo "################ DNS mode: $MODE ################"
+  DNSMODE="$1"; KIND="$2"; MODE="$DNSMODE-$KIND"; LINK="$(link_for "$KIND")"
+  echo; echo "################ DNS=$DNSMODE transport=$KIND ################"
 adb logcat -c
 echo "== run the integration test =="
 flutter test integration_test/tunnel_e2e_test.dart -d emulator-5554 \
-  --dart-define=E2E_LINK="$LINK" --dart-define=E2E_DNS="$MODE" > "$OUT/test-$MODE.log" 2>&1 &
+  --dart-define=E2E_LINK="$LINK" --dart-define=E2E_DNS="$DNSMODE" > "$OUT/test-$MODE.log" 2>&1 &
 TEST=$!
 
 # `flutter test` only relays the app's prints late; the marker is in logcat the moment it happens.
@@ -78,8 +91,9 @@ fi
 
 
 RESULT=0
-run_case doh
-run_case plain
+run_case plain tcp
+run_case plain ws
+run_case doh tcp
 kill $KEEP $SERVER 2>/dev/null
 echo "== server log =="; tail -20 "$OUT/server.log"
 exit $RESULT
