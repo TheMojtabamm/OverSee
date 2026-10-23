@@ -179,7 +179,7 @@ func TestMaskAndSnippet(t *testing.T) {
 	if len(u) != 36 || u[14] != '4' {
 		t.Fatalf("bad uuid %s", u)
 	}
-	l := ClientLink("vpn.example.com", "/ws-ab12", u, "x")
+	l := ClientLink("vpn.example.com", 443, true, "/ws-ab12", u, "x")
 	if !strings.Contains(l, "path=%2Fws-ab12") || !strings.Contains(l, "type=ws") {
 		t.Fatal(l)
 	}
@@ -223,5 +223,43 @@ func TestSetSetting(t *testing.T) {
 		if p.SetSetting(bad[0], bad[1]) == nil {
 			t.Errorf("should reject %v", bad)
 		}
+	}
+}
+
+func TestEntryAndUpstreamPorts(t *testing.T) {
+	d := DefaultSettings()
+	if p, tls := d.EntryPort(); p != 443 || !tls {
+		t.Fatalf("default entry = %d %v", p, tls)
+	}
+	if d.UpstreamPort() != 10000 {
+		t.Fatalf("default upstream port = %d", d.UpstreamPort())
+	}
+	s := Settings{Plain: ":8080", Upstream: "127.0.0.1:12345"}
+	if p, tls := s.EntryPort(); p != 8080 || tls {
+		t.Fatalf("plain entry = %d %v", p, tls)
+	}
+	if s.UpstreamPort() != 12345 {
+		t.Fatalf("upstream port = %d", s.UpstreamPort())
+	}
+	if p, tls := (Settings{Port: 8443}).EntryPort(); p != 8443 || !tls {
+		t.Fatalf("tls port = %d %v", p, tls)
+	}
+}
+
+func TestSetPortAndBareUpstream(t *testing.T) {
+	p := paths(t)
+	if err := p.SetSetting("port", "8443"); err != nil || p.LoadSettings().Port != 8443 {
+		t.Fatalf("port: %v %+v", err, p.LoadSettings())
+	}
+	for _, bad := range []string{"0", "70000", "x", ""} {
+		if p.SetSetting("port", bad) == nil {
+			t.Errorf("port %q should be refused", bad)
+		}
+	}
+	if err := p.SetSetting("upstream", "12345"); err != nil || p.LoadSettings().Upstream != "127.0.0.1:12345" {
+		t.Fatalf("bare upstream port: %v %+v", err, p.LoadSettings())
+	}
+	if err := p.SetSetting("upstream", "10.0.0.5:9000"); err != nil || p.LoadSettings().Upstream != "10.0.0.5:9000" {
+		t.Fatalf("host:port upstream: %v", err)
 	}
 }

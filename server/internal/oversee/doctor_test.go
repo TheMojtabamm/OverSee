@@ -206,3 +206,33 @@ func TestDoctorCertificateExpiry(t *testing.T) {
 		t.Error("missing cert file")
 	}
 }
+
+func TestDoctorPortChecks(t *testing.T) {
+	// gate and Xray on the same port
+	p := healthy(t)
+	p.SetSetting("plain", ":10000")
+	f := p.Doctor(env(loop(10000)))
+	if x := find(f, "Gate and Xray both use port 10000"); x == nil || x.Level != Fail {
+		t.Fatalf("same port must fail: %+v", f)
+	}
+
+	// TLS on a custom port without a certificate file
+	p = healthy(t)
+	p.SetSetting("port", "8443")
+	f = p.Doctor(env(loop(10000)))
+	if x := find(f, "TLS on port 8443 needs a certificate"); x == nil || x.Level != Fail {
+		t.Fatalf("custom TLS port without cert must fail: %+v", f)
+	}
+
+	// Cloudflare only proxies some ports (HTTP and HTTPS differ)
+	p = healthy(t)
+	p.SetSetting("cdn", "cloudflare")
+	p.SetSetting("plain", ":8081")
+	if find(p.Doctor(env(loop(10000))), "Cloudflare does not proxy HTTP on port 8081") == nil {
+		t.Fatal("8081 is not an HTTP port Cloudflare proxies")
+	}
+	p.SetSetting("plain", ":8080")
+	if find(p.Doctor(env(loop(10000))), "Cloudflare does not proxy") != nil {
+		t.Fatal("8080 is fine over HTTP")
+	}
+}

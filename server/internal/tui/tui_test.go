@@ -243,13 +243,13 @@ func TestGuideTabListsTheSetupsAndScrolls(t *testing.T) {
 		t.Fatalf("6 should open the guide, got tab %v", m.tab)
 	}
 	v := m.View()
-	for _, want := range []string{"How it works", "Direct + TLS", "CDN (Cloudflare)", "No TLS (plain)", "Own certificate", "Check & fix"} {
+	for _, want := range []string{"How it works", "Ports (entry vs Xray)", "Direct + TLS", "CDN (Cloudflare)", "No TLS (plain)", "Own certificate", "Check & fix"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("guide topic list is missing %q:\n%s", want, v)
 		}
 	}
 	// pick the CDN topic: it must teach the real commands
-	m = send(m, "down", "down")
+	m = send(m, "down", "down", "down")
 	v = m.View()
 	for _, want := range []string{"Cloudflare", "oversee set cdn cloudflare", "oversee cdn-test", "Origin"} {
 		if !strings.Contains(v, want) {
@@ -265,7 +265,7 @@ func TestGuideTabListsTheSetupsAndScrolls(t *testing.T) {
 
 func TestGuideCommandsAreRealOnes(t *testing.T) {
 	// Every `oversee set <name>` the guide teaches must be a setting the CLI accepts.
-	valid := map[string]bool{"domain": true, "upstream": true, "plain": true, "leak-ips": true, "cdn": true, "only-proxy": true, "token-days": true, "cert": true, "key": true}
+	valid := map[string]bool{"domain": true, "upstream": true, "plain": true, "port": true, "leak-ips": true, "cdn": true, "only-proxy": true, "token-days": true, "cert": true, "key": true}
 	for _, g := range guideTopics {
 		for _, line := range strings.Split(g.body, "\n") {
 			i := strings.Index(line, "oversee set ")
@@ -277,5 +277,76 @@ func TestGuideCommandsAreRealOnes(t *testing.T) {
 				t.Errorf("guide topic %q teaches an unknown setting %q", g.title, name)
 			}
 		}
+	}
+}
+
+func TestSetupShowsEntryAndXrayPortsAndEditsThem(t *testing.T) {
+	m := newModel(t)
+	m = send(m, "4") // Setup
+	v := m.View()
+	for _, want := range []string{"ENTRY PORT", "XRAY PORT", "GATE :443", "127.0.0.1:10000", "LISTEN IP"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("setup should show %q:\n%s", want, v)
+		}
+	}
+	// switch to plain (the Cloudflare Flexible case) and use 8080
+	m = send(m, "m")
+	if got := m.p.LoadSettings().Plain; got != ":80" {
+		t.Fatalf("TLS→plain should pick :80, got %q", got)
+	}
+	m = send(m, "p")
+	m.input.SetValue("")
+	m = typ(m, "8080")
+	m = send(m, "enter")
+	st := m.p.LoadSettings()
+	if st.Plain != ":8080" {
+		t.Fatalf("entry port edit: %+v", st)
+	}
+	if p, tls := st.EntryPort(); p != 8080 || tls {
+		t.Fatalf("EntryPort = %d %v", p, tls)
+	}
+	// the Xray port: a bare number means loopback
+	m = send(m, "u")
+	m.input.SetValue("")
+	m = typ(m, "12345")
+	m = send(m, "enter")
+	if got := m.p.LoadSettings().Upstream; got != "127.0.0.1:12345" {
+		t.Fatalf("upstream = %q", got)
+	}
+	v = m.View()
+	for _, want := range []string{"GATE :8080 (plain HTTP)", "127.0.0.1:12345", "security=none"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("setup should show %q after the edits:\n%s", want, v)
+		}
+	}
+	// behind a CDN the client link uses 443 + TLS even though the gate is plain on 8080
+	m.p.SetSetting("cdn", "cloudflare")
+	m.refresh()
+	v = m.View()
+	if !strings.Contains(v, ":443?") || !strings.Contains(v, "security=tls") || !strings.Contains(v, "CDN terminates TLS") {
+		t.Fatalf("CDN + plain entry: link should be 443/TLS:\n%s", v)
+	}
+	// a bad port is refused and the input stays open
+	m = send(m, "p")
+	m.input.SetValue("99999")
+	m = send(m, "enter")
+	if m.mode != modeEditPort || !m.msgIsErr {
+		t.Fatalf("a bad port must keep the prompt open with an error (mode %v, msg %q)", m.mode, m.msg)
+	}
+}
+
+func TestSwitchingToTLSNeedsADomainOrCertificate(t *testing.T) {
+	m := newModel(t)
+	m.p.SetSetting("plain", ":8080")
+	m.refresh()
+	m = send(m, "4", "m")
+	if m.p.LoadSettings().Plain == "" || !m.msgIsErr {
+		t.Fatalf("TLS without domain/cert must be refused: %+v %q", m.p.LoadSettings(), m.msg)
+	}
+	m.p.SetSetting("domain", "vpn.example.com")
+	m.refresh()
+	m = send(m, "m")
+	if p, tls := m.p.LoadSettings().EntryPort(); !tls || p != 8080 {
+		t.Fatalf("plain→TLS should keep the port, got %d tls=%v", p, tls)
 	}
 }

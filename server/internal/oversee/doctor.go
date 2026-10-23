@@ -186,6 +186,32 @@ func (p Paths) Doctor(env DoctorEnv) []Finding {
 		add(Fail, "No domain, certificate or plain listener", "the gate has nothing to listen on", "oversee set domain vpn.example.com")
 	}
 
+	// 4b. Ports: the gate and Xray cannot share one, and a CDN only proxies certain ports.
+	if ep, etls := s.EntryPort(); ep > 0 {
+		if up := s.UpstreamPort(); ep == up && (strings.HasPrefix(s.Upstream, "127.") || strings.HasPrefix(s.Upstream, "localhost") || strings.HasPrefix(s.Upstream, "0.0.0.0")) {
+			add(Fail, fmt.Sprintf("Gate and Xray both use port %d", ep), "the gate listens on the entry port, Xray must be on a different loopback port", "oversee set upstream 10000  (and set the same port in the Xray/3x-ui inbound)")
+		}
+		if etls && ep != 443 && s.Cert == "" {
+			add(Fail, fmt.Sprintf("TLS on port %d needs a certificate file", ep), "Let's Encrypt can only validate on 443/80", "oversee set cert FILE && oversee set key FILE, or oversee set port 443")
+		}
+		if s.CDN == "cloudflare" {
+			okPorts := map[bool][]int{true: {443, 2053, 2083, 2087, 2096, 8443}, false: {80, 8080, 8880, 2052, 2082, 2086, 2095}}
+			found := false
+			for _, q := range okPorts[etls] {
+				if q == ep {
+					found = true
+				}
+			}
+			if !found {
+				kind := "HTTP"
+				if etls {
+					kind = "HTTPS"
+				}
+				add(Warn, fmt.Sprintf("Cloudflare does not proxy %s on port %d", kind, ep), fmt.Sprintf("Cloudflare only forwards %s to these ports: %v", kind, okPorts[etls]), "choose one of them: oversee set port N (TLS) or oversee set plain :N")
+			}
+		}
+	}
+
 	// 5. CDN consistency.
 	if s.CDN != "" {
 		info := p.ProxyInfo()

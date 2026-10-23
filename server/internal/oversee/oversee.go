@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -69,6 +70,33 @@ type Settings struct {
 	TokenDays int
 	Cert      string
 	Key       string
+
+	// Port is the TLS listen port (0 = 443). Ignored in plain mode (see Plain).
+	Port int
+}
+
+// EntryPort is the port the gate listens on for clients (or for the CDN), and whether it
+// speaks TLS: plain HTTP when Plain is set, TLS otherwise.
+func (s Settings) EntryPort() (port int, tls bool) {
+	if s.Plain != "" {
+		if i := strings.LastIndex(s.Plain, ":"); i >= 0 {
+			fmt.Sscanf(s.Plain[i+1:], "%d", &port)
+		}
+		return port, false
+	}
+	if s.Port > 0 {
+		return s.Port, true
+	}
+	return 443, true
+}
+
+// UpstreamPort is the port of the Xray inbound behind the gate.
+func (s Settings) UpstreamPort() int {
+	port := 10000
+	if i := strings.LastIndex(s.Upstream, ":"); i >= 0 {
+		fmt.Sscanf(s.Upstream[i+1:], "%d", &port)
+	}
+	return port
 }
 
 func DefaultSettings() Settings { return Settings{Upstream: "127.0.0.1:10000"} }
@@ -101,6 +129,8 @@ func (p Paths) LoadSettings() Settings {
 			s.Cert = strings.TrimSpace(v)
 		case "KEY":
 			s.Key = strings.TrimSpace(v)
+		case "PORT":
+			fmt.Sscanf(strings.TrimSpace(v), "%d", &s.Port)
 		case "LEAK_IPS":
 			fmt.Sscanf(strings.TrimSpace(v), "%d", &s.LeakIPs)
 		}
@@ -116,8 +146,8 @@ func (p Paths) SaveSettings(s Settings) error {
 	if s.OnlyProxy {
 		op = "1"
 	}
-	body := fmt.Sprintf("# managed by `oversee`\nDOMAIN=%s\nUPSTREAM=%s\nPLAIN=%s\nLEAK_IPS=%d\nCDN=%s\nONLY_PROXY=%s\nCERT=%s\nKEY=%s\nTOKEN_DAYS=%d\n",
-		s.Domain, s.Upstream, s.Plain, s.LeakIPs, s.CDN, op, s.Cert, s.Key, s.TokenDays)
+	body := fmt.Sprintf("# managed by `oversee`\nDOMAIN=%s\nUPSTREAM=%s\nPLAIN=%s\nLEAK_IPS=%d\nCDN=%s\nONLY_PROXY=%s\nCERT=%s\nKEY=%s\nTOKEN_DAYS=%d\nPORT=%d\n",
+		s.Domain, s.Upstream, s.Plain, s.LeakIPs, s.CDN, op, s.Cert, s.Key, s.TokenDays, s.Port)
 	return writeAtomic(p.Conf, []byte(body), 0o640)
 }
 
@@ -423,8 +453,11 @@ func (p Paths) SetSetting(name, value string) error {
 	case "domain":
 		s.Domain = value
 	case "upstream":
+		if n, err := strconv.Atoi(value); err == nil && n >= 1 && n <= 65535 {
+			value = "127.0.0.1:" + value // a bare port means Xray on loopback
+		}
 		if !strings.Contains(value, ":") {
-			return errors.New("upstream must be host:port, e.g. 127.0.0.1:10000")
+			return errors.New("upstream must be host:port (or just the port), e.g. 127.0.0.1:10000")
 		}
 		s.Upstream = value
 	case "plain":
@@ -462,8 +495,14 @@ func (p Paths) SetSetting(name, value string) error {
 		s.Cert = value
 	case "key":
 		s.Key = value
+	case "port":
+		n := 0
+		if _, err := fmt.Sscanf(value, "%d", &n); err != nil || n < 1 || n > 65535 {
+			return errors.New("port must be 1-65535")
+		}
+		s.Port = n
 	default:
-		return fmt.Errorf("unknown setting %q (domain, upstream, plain, leak-ips, cdn, only-proxy, token-days, cert, key)", name)
+		return fmt.Errorf("unknown setting %q (domain, upstream, plain, port, leak-ips, cdn, only-proxy, token-days, cert, key)", name)
 	}
 	if (s.Cert == "") != (s.Key == "") && (name == "cert" || name == "key") && value != "" {
 		// allowed transiently: the user sets one then the other; the gate refuses to start

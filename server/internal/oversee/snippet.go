@@ -16,13 +16,22 @@ func XrayInbound(port int, path, uuid string) string {
 }`, port, uuid, path)
 }
 
-// ClientLink is the vless:// link that goes with XrayInbound, to paste into the app.
-func ClientLink(domain, path, uuid, name string) string {
+// ClientLink is the vless:// link that goes with XrayInbound, to paste into the app. port is the
+// port the client connects to; tls says whether the client uses TLS there.
+func ClientLink(domain string, port int, tls bool, path, uuid, name string) string {
 	if domain == "" {
 		domain = "YOUR.DOMAIN"
 	}
-	return fmt.Sprintf("vless://%s@%s:443?encryption=none&security=tls&sni=%s&type=ws&path=%s#%s",
-		uuid, domain, domain, urlEscape(path), name)
+	sec := "none"
+	if tls {
+		sec = "tls"
+	}
+	sni := ""
+	if tls {
+		sni = "&sni=" + domain
+	}
+	return fmt.Sprintf("vless://%s@%s:%d?encryption=none&security=%s%s&type=ws&host=%s&path=%s#%s",
+		uuid, domain, port, sec, sni, domain, urlEscape(path), name)
 }
 
 func urlEscape(p string) string {

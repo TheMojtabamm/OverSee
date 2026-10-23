@@ -25,6 +25,7 @@ func RunGate(p Paths, args []string) error {
 	fs := flag.NewFlagSet("gate", flag.ContinueOnError)
 	domain := fs.String("domain", st.Domain, "public domain; TLS on :443 via Let's Encrypt (not for CDN-hidden origins: use -cert/-key)")
 	upstream := fs.String("upstream", st.Upstream, "Xray inbound host:port (plain HTTP)")
+	port := fs.Int("port", st.Port, "TLS listen port (default 443; a port other than 443 needs -cert/-key)")
 	plain := fs.String("plain", st.Plain, "plain-HTTP listen address (testing, or TLS terminated by the CDN: e.g. :8080)")
 	allow := fs.String("allow", p.Allow, "allow-list file")
 	keys := fs.String("keys", p.Keys, "app keys file")
@@ -128,6 +129,13 @@ func RunGate(p Paths, args []string) error {
 		return (&http.Server{Addr: *plain, Handler: h, ReadHeaderTimeout: 10 * time.Second}).ListenAndServe()
 	}
 
+	tlsPort := 443
+	if *port > 0 {
+		tlsPort = *port
+	}
+	if tlsPort != 443 && *cert == "" {
+		return fmt.Errorf("TLS on port %d needs a certificate file (oversee set cert/key): Let's Encrypt validates on 443/80 only", tlsPort)
+	}
 	tlsConf := &tls.Config{MinVersion: tls.VersionTLS12, NextProtos: []string{"http/1.1"}}
 	if *cert != "" {
 		cr := &certReloader{cert: *cert, key: *keyFile}
@@ -135,7 +143,7 @@ func RunGate(p Paths, args []string) error {
 			return fmt.Errorf("certificate: %w", err)
 		}
 		tlsConf.GetCertificate = cr.get
-		log.Printf("TLS on :443 from %s", *cert)
+		log.Printf("TLS on :%d from %s", tlsPort, *cert)
 	} else {
 		m := &autocert.Manager{
 			Prompt:     autocert.AcceptTOS,
@@ -147,7 +155,7 @@ func RunGate(p Paths, args []string) error {
 		tlsConf.NextProtos = []string{"http/1.1", "acme-tls/1"}
 		log.Printf("TLS on :443 for %s (Let's Encrypt)", *domain)
 	}
-	srv := &http.Server{Addr: ":443", Handler: h, ReadHeaderTimeout: 10 * time.Second, TLSConfig: tlsConf}
+	srv := &http.Server{Addr: fmt.Sprintf(":%d", tlsPort), Handler: h, ReadHeaderTimeout: 10 * time.Second, TLSConfig: tlsConf}
 	return srv.ListenAndServeTLS("", "")
 }
 

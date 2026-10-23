@@ -72,6 +72,21 @@ everyone (fail closed). Uninstall: `… | sudo bash -s -- --uninstall`.
 The release is built by `.github/workflows/server-release.yml` when you push a tag
 like `server-v1.0.0` (the repo must be public for the one-liner to download it).
 
+## Ports: the entry port and the Xray port
+
+Two different ports, set in `oversee` → **Setup** (keys `p`, `m`, `u`) or from the shell:
+
+| | what it is | set with |
+|---|---|---|
+| **Entry port** | where the gate listens; clients (or the CDN) connect here | `oversee set plain :8080` (plain HTTP) or `oversee set port 8443` (TLS, needs `cert`/`key`); default TLS on 443 |
+| **Xray port** | the Xray / 3x-ui inbound the gate forwards to, on loopback | `oversee set upstream 10000` (a bare port means `127.0.0.1:PORT`) |
+
+They must differ. Cloudflare only forwards HTTP to 80, 8080, 8880, 2052, 2082, 2086, 2095 and HTTPS to 443,
+2053, 2083, 2087, 2096, 8443; `oversee doctor` warns about any other entry port behind Cloudflare, about the
+gate and Xray sharing a port, and about TLS on a port other than 443 without a certificate file
+(Let's Encrypt only validates on 443/80). The Setup tab also prints the exact 3x-ui inbound to create and the
+client link for the chosen combination.
+
 ## Behind a CDN (Cloudflare, Fastly)
 
 Large channels front their servers with a CDN, so the client connects to the CDN and the

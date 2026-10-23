@@ -31,6 +31,29 @@ The phone connects to the GATE (ports 80/443 on your server). The gate checks a 
 
 ! The gate and Xray must NOT both listen publicly. If Xray is reachable directly, nobody needs the gate. Xray must listen on 127.0.0.1.`},
 
+	{"Ports (entry vs Xray)", "Ports: where clients connect vs where Xray listens", `# Two different ports — do not mix them up
+- ENTRY port = the port the GATE listens on. Clients (or the CDN) connect here.
+- XRAY port = the port of the inbound you create in Xray / 3x-ui. Only the gate talks to it, on 127.0.0.1.
+They must be different numbers.
+
+# Set them in this tool
+- Setup tab, key p: entry port (e.g. 8080).
+- Setup tab, key m: switch the entry between TLS and plain HTTP.
+- Setup tab, key u: the Xray port (e.g. 10000). Create the 3x-ui inbound with exactly that port.
+- The same from the shell:
+$ sudo oversee set plain :8080          entry = plain HTTP on 8080
+$ sudo oversee set port 8443            entry = TLS on 8443 (needs a certificate file)
+$ sudo oversee set upstream 10000       Xray inbound port
+
+# Typical combinations
+- Cloudflare, Flexible, entry 8080 plain, Xray 10000. Clients still use 443 + TLS (Cloudflare adds the TLS).
+- Cloudflare, Full (strict), entry 443 TLS with an Origin certificate, Xray 10000.
+- No CDN, Let's Encrypt: entry 443 TLS, Xray 10000.
+- No CDN, no TLS: entry 1001 plain, Xray 10000; clients connect to 1001 with security=none.
+
+! Cloudflare only forwards certain ports. HTTP: 80, 8080, 8880, 2052, 2082, 2086, 2095. HTTPS: 443, 2053, 2083, 2087, 2096, 8443. oversee doctor warns about any other port.
+! Free the port first: 3x-ui's own panel or another service must not already use the entry port.`},
+
 	{"Direct + TLS", "Direct + TLS (no CDN)", `# Use this when clients connect straight to your server's IP with your own domain.
 - 1. DNS: an A record  vpn.example.com → your server IP. If the domain is on Cloudflare, make the cloud GREY (DNS only).
 - 2. Open ports 80 and 443 in the firewall (port 80 is only for the certificate check).

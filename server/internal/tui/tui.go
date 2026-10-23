@@ -71,6 +71,7 @@ const (
 	modeEditDomain
 	modeEditUpstream
 	modeEditLeak
+	modeEditPort
 )
 
 type Model struct {
@@ -265,9 +266,38 @@ func (m Model) updateBrowse(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input.Focus()
 		case "u":
 			m.mode = modeEditUpstream
-			m.input.SetValue(m.settings.Upstream)
-			m.input.Placeholder = "127.0.0.1:10000"
+			m.input.SetValue(fmt.Sprint(m.settings.UpstreamPort()))
+			m.input.Placeholder = "the Xray inbound port, e.g. 10000"
 			m.input.Focus()
+		case "p":
+			ep, _ := m.settings.EntryPort()
+			m.mode = modeEditPort
+			m.input.SetValue(fmt.Sprint(ep))
+			m.input.Placeholder = "the port clients (or the CDN) connect to, e.g. 8080"
+			m.input.Focus()
+		case "m":
+			st := m.settings
+			ep, tls := st.EntryPort()
+			if tls { // → plain HTTP on the same port (443 would clash with nothing, but 80 is the usual plain port)
+				if ep == 443 {
+					ep = 80
+				}
+				st.Plain = fmt.Sprintf(":%d", ep)
+			} else {
+				if st.Domain == "" && st.Cert == "" {
+					m.say("TLS needs a domain (Let's Encrypt) or a certificate file first — see Guide → Own certificate", true)
+					return m, nil
+				}
+				st.Plain = ""
+				st.Port = ep
+			}
+			if err := m.p.SaveSettings(st); err != nil {
+				m.say(err.Error(), true)
+			} else {
+				np, nt := st.EntryPort()
+				m.say(fmt.Sprintf("entry is now %s on port %d — restart the gate (Status → R) to apply", map[bool]string{true: "TLS", false: "plain HTTP"}[nt], np), false)
+			}
+			m.refresh()
 		case "c":
 			st := m.settings
 			st.CDN = oversee.NextCDN(st.CDN)
@@ -387,13 +417,31 @@ func (m Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.say("key added as the current key (older ones still accepted until you remove them)", false)
-		case modeEditDomain, modeEditUpstream, modeEditLeak:
+		case modeEditDomain, modeEditUpstream, modeEditLeak, modeEditPort:
 			s := m.settings
 			switch m.mode {
 			case modeEditDomain:
 				s.Domain = val
 			case modeEditUpstream:
+				if n, err := strconv.Atoi(val); err == nil && n >= 1 && n <= 65535 {
+					val = "127.0.0.1:" + val // a bare port means Xray on loopback
+				}
+				if !strings.Contains(val, ":") {
+					m.say("enter the Xray inbound port (e.g. 10000) or host:port", true)
+					return m, nil
+				}
 				s.Upstream = val
+			case modeEditPort:
+				n, err := strconv.Atoi(val)
+				if err != nil || n < 1 || n > 65535 {
+					m.say("enter a port between 1 and 65535", true)
+					return m, nil
+				}
+				if _, tls := s.EntryPort(); tls {
+					s.Port = n
+				} else {
+					s.Plain = fmt.Sprintf(":%d", n)
+				}
 			default:
 				n, err := strconv.Atoi(val)
 				if err != nil || n < 0 {
@@ -503,7 +551,7 @@ func (m Model) View() string {
 
 	b.WriteString("\n")
 	switch m.mode {
-	case modeAddLock, modeAddKey, modeEditDomain, modeEditUpstream, modeEditLeak:
+	case modeAddLock, modeAddKey, modeEditDomain, modeEditUpstream, modeEditLeak, modeEditPort:
 		b.WriteString("\n " + m.input.View() + "\n " + helpStyle.Render("enter save · esc cancel") + "\n")
 	case modeConfirmRevoke:
 		if m.sel < len(m.locks) {
@@ -544,7 +592,7 @@ func (m Model) helpPairs() [][2]string {
 	case tabKeys:
 		own = [][2]string{{"↑↓", "select"}, {"n", "new"}, {"g", "generate"}, {"d", "remove"}}
 	case tabSetup:
-		own = [][2]string{{"e", "domain"}, {"u", "upstream"}, {"c", "CDN"}, {"o", "only-CDN"}, {"t", "leak alert"}, {"g", "example"}}
+		own = [][2]string{{"p", "entry port"}, {"m", "TLS/plain"}, {"u", "Xray port"}, {"e", "domain"}, {"c", "CDN"}, {"o", "only-CDN"}, {"t", "leak alert"}, {"g", "example"}}
 	case tabGuide:
 		own = [][2]string{{"↑↓", "topic"}, {"space", "scroll down"}, {"b", "scroll up"}}
 	}
@@ -685,24 +733,64 @@ func (m Model) viewKeys() string {
 
 func (m Model) viewSetup() string {
 	s := m.settings
-	port := 10000
-	if i := strings.LastIndex(s.Upstream, ":"); i >= 0 {
-		fmt.Sscanf(s.Upstream[i+1:], "%d", &port)
-	}
+	ep, etls := s.EntryPort()
+	up := s.UpstreamPort()
 	edit := func(k string) string { return "   " + keyBadge.Render(k) }
+	mode := "plain HTTP"
+	if etls {
+		mode = "TLS"
+	}
 	var b strings.Builder
-	b.WriteString(m.sec("Gate settings") + "\n")
+
+	// 1. Where traffic enters and where it goes
+	who := "clients"
+	if s.CDN != "" {
+		who = "the " + s.CDN + " CDN"
+	}
+	flow := fmt.Sprintf("%s  ──▶  GATE :%d (%s)  ──▶  XRAY 127.0.0.1:%d",
+		strings.ToUpper(who), ep, mode, up)
+	b.WriteString(m.sec("Ports") + "\n")
+	b.WriteString(m.box().Render(strings.Join([]string{
+		headerStyle.Render(flow),
+		row("Entry port", val(fmt.Sprintf("%d  (%s)", ep, mode))+edit("p")+" "+keyBadge.Render("m")+dimStyle.Render(" TLS ⇄ plain")),
+		dimStyle.Render("    the port the gate listens on: what " + who + " connects to"),
+		row("Xray port", val(fmt.Sprint(up))+edit("u")),
+		dimStyle.Render("    the port of the inbound you create in Xray / 3x-ui (loopback only)"),
+	}, m.gap())))
+
+	// 2. The other settings
+	b.WriteString("\n\n" + m.sec("Gate settings") + "\n")
 	b.WriteString(m.box().Render(strings.Join([]string{
 		row("Domain", orDash(s.Domain)+edit("e")),
-		row("Upstream", val(s.Upstream)+edit("u")),
-		row("Leak alert", val(leakText(s.LeakIPs))+edit("t")),
 		row("CDN fronting", val(cdnText(s, m.p.ProxyInfo()))+edit("c")),
+		row("Leak alert", val(leakText(s.LeakIPs))+edit("t")),
 	}, m.gap())))
-	b.WriteString("\n\n" + m.sec("Xray inbound to put behind the gate") + dimStyle.Render("   loopback only; the gate does TLS") + "\n")
-	b.WriteString(m.box().Render(oversee.XrayInbound(port, m.exPath, m.exUUID)))
-	b.WriteString("\n\n" + m.sec("Matching client link") + dimStyle.Render("   paste into the app, then lock it with “Server gate”") + "\n")
-	b.WriteString(m.box().Render(oversee.ClientLink(s.Domain, m.exPath, m.exUUID, "my-server")))
-	b.WriteString("\n" + dimStyle.Render("Using a CDN, a certificate file or no TLS at all? Read ") + selStyle.Render("6 Guide") + dimStyle.Render("."))
+
+	// 3. What to type in 3x-ui, and the link to give the app
+	b.WriteString("\n\n" + m.sec("In Xray / 3x-ui: create this inbound") + dimStyle.Render("   "+keyBadge.Render("g")+" new example") + "\n")
+	b.WriteString(m.box().Render(strings.Join([]string{
+		row("Protocol", val("vless")),
+		row("Listen IP", val("127.0.0.1")+dimStyle.Render("   never empty or 0.0.0.0")),
+		row("Port", val(fmt.Sprint(up))+dimStyle.Render("   ← the Xray port above")),
+		row("Transmission", val("WebSocket")),
+		row("Path", val(m.exPath)),
+		row("Security", val("None")+dimStyle.Render("   the gate does TLS")),
+		row("Client id", val(m.exUUID)),
+	}, "\n")))
+
+	linkPort, linkTLS, note := ep, etls, ""
+	if s.CDN != "" && !etls {
+		linkPort, linkTLS = 443, true
+		note = "the CDN terminates TLS: clients use 443 with TLS, the CDN forwards plain HTTP to port " + fmt.Sprint(ep)
+	} else if !etls {
+		note = "no TLS: the traffic is readable on the way (the app shows “Not encrypted”)"
+	}
+	b.WriteString("\n\n" + m.sec("Client link for the app") + dimStyle.Render("   paste it, then lock with “Server gate”") + "\n")
+	b.WriteString(m.box().Render(oversee.ClientLink(s.Domain, linkPort, linkTLS, m.exPath, m.exUUID, "my-server")))
+	if note != "" {
+		b.WriteString("\n" + dimStyle.Render(note))
+	}
+	b.WriteString("\n" + dimStyle.Render("CDN, certificate file or no TLS? Read ") + selStyle.Render("6 Guide") + dimStyle.Render("."))
 	return b.String()
 }
 
