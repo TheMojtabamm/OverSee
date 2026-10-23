@@ -46,7 +46,7 @@ One command installs a single binary (checksum-verified, no dependencies) and a
 systemd unit:
 
 ```
-curl -fsSL https://github.com/themojtabamm/OverSee/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://github.com/themojtabamm/OverSee/releases/download/server-latest/install.sh | sudo bash
 ```
 
 Then `sudo oversee` opens the manager (TUI):

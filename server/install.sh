@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # Oversea gate manager installer.
 #
-#   curl -fsSL https://github.com/themojtabamm/OverSee/releases/latest/download/install.sh | sudo bash
+#   curl -fsSL https://github.com/themojtabamm/OverSee/releases/download/server-latest/install.sh | sudo bash
 #
-# Options (env):  OVERSEE_VERSION=server-v1.2.3   pin a release (default: latest)
+# Run it again at any time to update to the newest server build.
+#
+# Options (env):  OVERSEE_VERSION=server-v1.2.3   pin a release (default: server-latest)
 #                 OVERSEE_REPO=owner/repo           where releases live
 #                 OVERSEE_BASE_URL=https://mirror/dir  download from a mirror instead
 # Uninstall:      curl -fsSL …/install.sh | sudo bash -s -- --uninstall
 set -euo pipefail
 
 REPO="${OVERSEE_REPO:-themojtabamm/OverSee}"
-VERSION="${OVERSEE_VERSION:-latest}"
+VERSION="${OVERSEE_VERSION:-server-latest}"
 BIN=/usr/local/bin/oversee
 DIR=/etc/oversea
 UNIT=/etc/systemd/system/oversee-gate.service
@@ -38,7 +40,6 @@ command -v curl >/dev/null || die "curl is required"
 command -v sha256sum >/dev/null || die "sha256sum is required"
 
 if [ -n "${OVERSEE_BASE_URL:-}" ]; then BASE="$OVERSEE_BASE_URL"   # testing / mirrors
-elif [ "$VERSION" = latest ]; then BASE="https://github.com/$REPO/releases/latest/download"
 else BASE="https://github.com/$REPO/releases/download/$VERSION"; fi
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
@@ -48,6 +49,7 @@ curl -fsSL "$BASE/oversee-linux-$ARCH.sha256" -o "$TMP/oversee.sha256"    || die
 say "verifying checksum"
 ( cd "$TMP" && echo "$(cut -d' ' -f1 oversee.sha256)  oversee" | sha256sum -c - >/dev/null ) || die "checksum mismatch — refusing to install"
 
+WAS_ACTIVE=0; systemctl is-active --quiet oversee-gate 2>/dev/null && WAS_ACTIVE=1
 install -m 0755 "$TMP/oversee" "$BIN"
 install -d -m 0750 "$DIR"
 [ -f "$DIR/allow.txt" ] || printf '# <32-hex code> <creator fingerprint> [note]\n' > "$DIR/allow.txt"
@@ -88,6 +90,7 @@ else
   say "systemd not found: run the gate yourself with  oversee gate"
 fi
 
+if [ "$WAS_ACTIVE" = 1 ]; then systemctl restart oversee-gate && say "gate restarted on the new version"; fi
 say "installed $("$BIN" version)"
 cat <<'MSG'
 
