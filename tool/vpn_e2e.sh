@@ -42,13 +42,14 @@ adb install -r -t build/app/outputs/flutter-apk/app-debug.apk || exit 1
 adb shell appops set $PKG ACTIVATE_VPN allow
 adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS 2>/dev/null || true
 # the test reinstalls the app; keep the consent in place if that resets it
-( while true; do adb shell appops set $PKG ACTIVATE_VPN allow >/dev/null 2>&1; sleep 3; done ) &
+( while true; do adb shell appops set $PKG ACTIVATE_VPN allow >/dev/null 2>&1; sleep 0.3; done ) &
 KEEP=$!
 
 run_case() {
   DNSMODE="$1"; KIND="$2"; MODE="$DNSMODE-$KIND"; LINK="$(link_for "$KIND")"
   echo; echo "################ DNS=$DNSMODE transport=$KIND ################"
 adb logcat -c
+adb shell appops set $PKG ACTIVATE_VPN allow >/dev/null 2>&1
 echo "== run the integration test =="
 flutter test integration_test/tunnel_e2e_test.dart -d emulator-5554 \
   --dart-define=E2E_LINK="$LINK" --dart-define=E2E_DNS="$DNSMODE" > "$OUT/test-$MODE.log" 2>&1 &
