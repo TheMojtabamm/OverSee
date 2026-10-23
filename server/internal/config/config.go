@@ -48,17 +48,17 @@ type Config struct {
 // server fails fast at startup instead of half-working.
 func Load() Config {
 	return Config{
-		ListenAddr:       getenv("LISTEN_ADDR", ":8080"),
-		DBPath:           getenv("DB_PATH", "oversea.db"),
-		PublicBaseURL:    getenv("PUBLIC_BASE_URL", "http://localhost:8080"),
-		LOCK_SERVER_KEY:  mustEnv("LOCK_SERVER_KEY"),
+		ListenAddr:        getenv("LISTEN_ADDR", ":8080"),
+		DBPath:            getenv("DB_PATH", "oversea.db"),
+		PublicBaseURL:     getenv("PUBLIC_BASE_URL", "http://localhost:8080"),
+		LOCK_SERVER_KEY:   mustEnv("LOCK_SERVER_KEY"),
 		ClientKeyMaterial: getenv("CLIENT_KEY_MATERIAL", ""),
-		JWTSecret:        mustEnv("JWT_SECRET"),
-		OwnerAuthEnabled: getenvBool("OWNER_AUTH_ENABLED", true),
-		SeedEmail:        os.Getenv("ADMIN_SEED_EMAIL"),
-		SeedPassword:     os.Getenv("ADMIN_SEED_PASSWORD"),
-		RPS:              getenvFloat("RATE_RPS", 20),
-		Burst:            getenvInt("RATE_BURST", 40),
+		JWTSecret:         mustEnv("JWT_SECRET"),
+		OwnerAuthEnabled:  getenvBool("OWNER_AUTH_ENABLED", true),
+		SeedEmail:         os.Getenv("ADMIN_SEED_EMAIL"),
+		SeedPassword:      os.Getenv("ADMIN_SEED_PASSWORD"),
+		RPS:               getenvFloat("RATE_RPS", 20),
+		Burst:             getenvInt("RATE_BURST", 40),
 	}
 }
 

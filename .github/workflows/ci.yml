@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.7"
+          channel: stable
+      - run: flutter pub get
+      - name: Format
+        run: dart format --set-exit-if-changed lib test
+      - name: Analyze
+        run: flutter analyze --fatal-infos
+      # Dummy key parts: tests only need *a* key, not the real one.
+      - name: Native core — C++ tests (SHA-256/HMAC vectors, ASan+UBSan)
+        run: |
+          g++ -std=c++17 -Wall -Wextra -O1 -fsanitize=address,undefined \
+            -I android/app/src/main/cpp tool/native_test/test_core.cpp \
+            android/app/src/main/cpp/sha256.cpp android/app/src/main/cpp/ovs_core.cpp -o /tmp/test_core
+          /tmp/test_core
+      - name: Test (Dart derivation)
+        run: >
+          flutter test
+          --dart-define=LOCK_P1=aaaaaaaaaaaaaaaa --dart-define=LOCK_P2=bbbbbbbbbbbbbbbb
+          --dart-define=LOCK_P3=cccccccccccccccc --dart-define=LOCK_P4=dddddddddddddddd
+          --dart-define=GATE_KEY=gate-dev-key
+      # Native and Dart must derive the same keys/tokens, with secrets plain and masked.
+      - name: Test (native == Dart, plain and masked)
+        run: |
+          for MASKED in 0 1; do
+            MASKED=$MASKED tool/build_native_host.sh /tmp/libovs_host.so
+            OVS_NATIVE_LIB=/tmp/libovs_host.so flutter test test/native_core_test.dart \
+              --dart-define=LOCK_P1=aaaaaaaaaaaaaaaa --dart-define=LOCK_P2=bbbbbbbbbbbbbbbb \
+              --dart-define=LOCK_P3=cccccccccccccccc --dart-define=LOCK_P4=dddddddddddddddd \
+              --dart-define=GATE_KEY=gate-dev-key
+          done
+
+  xray-config:
+    # Generates configs from the Dart builder and loads each with Xray-core's own
+    # loader (same code the app runs), so schema drift fails here, not on a phone.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.7"
+          channel: stable
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - run: flutter pub get
+      - run: dart run tool/dump_xray_configs.dart /tmp/xray_out
+      - name: Validate with Xray-core
+        working-directory: tool/validate_xray_config
+        run: go run . /tmp/xray_out/*.json
+
+  gate-e2e:
+    # Real Xray server + the gate + a real Xray client built by the app's Dart code:
+    # a client WITH the token reaches the origin, one without it (a decoded link
+    # pasted into another app) is refused.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.7"
+          channel: stable
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - run: flutter pub get
+      - name: Build Xray
+        working-directory: tool/validate_xray_config
+        run: GOFLAGS=-mod=mod go build -o "$RUNNER_TEMP/xray" github.com/xtls/xray-core/main
+      - run: XRAY="$RUNNER_TEMP/xray" tool/e2e_gate.sh
+      # Same, but with a fake CDN edge in front and the gate in -cdn/-only-proxy mode.
+      - run: XRAY="$RUNNER_TEMP/xray" tool/e2e_cdn.sh
+      # The whole story with the real app code: lock -> decode (bot) -> import -> connect.
+      # A decoded config and a re-locked copy must be refused; only the owner's file connects.
+      - run: XRAY="$RUNNER_TEMP/xray" tool/e2e_lockflow.sh
+
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+      - run: go vet ./...
+      - run: go test ./...

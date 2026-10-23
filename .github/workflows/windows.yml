@@ -23,7 +23,7 @@ jobs:
         run: flutter pub get
 
       - name: Build Windows (release)
-        run: flutter build windows --release --dart-define=LOCK_CLIENT_KEY=${{ secrets.LOCK_CLIENT_KEY }}
+        run: flutter build windows --release --dart-define=LOCK_P1=${{ secrets.LOCK_P1 }} --dart-define=LOCK_P2=${{ secrets.LOCK_P2 }} --dart-define=LOCK_P3=${{ secrets.LOCK_P3 }} --dart-define=LOCK_P4=${{ secrets.LOCK_P4 }} --dart-define=GATE_KEY=${{ secrets.GATE_KEY }} --dart-define=AD_INTERSTITIAL_ID=${{ secrets.AD_INTERSTITIAL_ID }} --dart-define=AD_BANNER_ID=${{ secrets.AD_BANNER_ID }}
 
       - name: Package release folder
         run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath oversea-windows.zip

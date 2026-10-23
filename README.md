@@ -13,7 +13,7 @@ a local Flutter install to produce builds.
   later).
 - Add configs by paste or by subscription URL.
 - Local on-device storage (no account, no server needed to use the app).
-- **Locked-config system** (`lib/services/locked_config_codec.dart`): a
+- **Locked-config system** (`lib/domain/locked_config_codec.dart`, spec in `docs/LOCK_V3.md`): a
   time-rotating, key-injected format so configs can only be opened by this app.
 - **Free-config feed** client (`lib/services/free_configs_service.dart`): an
   in-app list of channels and their configs, served from your own feed server.
@@ -37,15 +37,23 @@ Push to `main` (or run the workflow manually). Artifacts:
 
 Add one secret in **Settings → Secrets and variables → Actions**:
 
-- `LOCK_CLIENT_KEY` — the client-side key material for the locked-config system.
-  It must match the key held by your server-side config generator.
+- `LOCK_P1`, `LOCK_P2`, `LOCK_P3`, `LOCK_P4` — four random strings (e.g. 16+ chars
+  each) that together form the lock secret. They are injected via `--dart-define`,
+  XOR-masked and rejoined at runtime; never committed. Without them a build cannot
+  lock or open `.ovsea` files.
+- `GATE_KEY` — the app key for the server gate (`docs/GATE.md`); also set on the server.
+- `PLAY_CERT_SHA256` (optional) — Play Console → App integrity → app signing certificate SHA-256 (hex, no colons). The app derives wrong keys if its signing certificate isn't in the accepted list.
+- `AD_BANNER_ID` (optional) — AdMob banner unit.
+- `AD_INTERSTITIAL_ID` (optional) — AdMob interstitial unit shown after connect.
+  `ADMOB_APP_ID` (optional) — AdMob application id for the manifest. Both default
+  to Google's public *test* ids, so unconfigured builds never serve real ads.
 
-The build injects it via `--dart-define`; it is never committed.
+Rotate the four parts (and bump `LockedConfigCodec.keyGeneration`) every release.
 
 ## Why browsing this repo does not break the lock
 
 The locked-config key is **not in the source**. `LockedConfigCodec` reads it from
-a compile-time define (`LOCK_CLIENT_KEY`) that only exists during a CI build. A
+a compile-time define (`LOCK_P1..P4`) that only exists during a CI build. A
 fresh checkout carries an empty value, so the public source shows the algorithm
 but no key — and the algorithm alone opens nothing.
 
@@ -107,13 +115,25 @@ throwaway key so the APK still installs for testing.
 
 ```
 lib/
-  models/vpn_config.dart          config model + protocol enum
-  services/
-    config_parser.dart            parse standard config URIs
-    subscription_service.dart     import from a subscription URL
-    free_configs_service.dart     in-app free-config feed client
-    locked_config_codec.dart      locked-config encrypt/decrypt (rotating key)
-    config_store.dart             local persistence
-  main.dart                       minimal functional UI
-.github/workflows/                Android + Windows CI
+  main.dart, app.dart, providers.dart   entry, MaterialApp (fa/en, light/dark), Riverpod
+  core/                                  app_config (flavors), log (redacting), strings (fa/en),
+                                         http_client (Dio + SPKI pinning + bounded retry)
+  domain/                                vpn_config, config_parser, locked_config_codec (v3)
+  data/                                  config_store (Keystore storage + v1→v2 migration), ad_service
+  features/{shell,configs,add}/          UI
+android/                                 committed native project (R8, FLAG_SECURE, AdMob placeholder)
+docs/                                    ANDROID_PLAN, LOCK_V3, LOCK_OFFLINE, THREAT_MODEL
+test/                                    codec, parser, store migration, SPKI pin, i18n, log
+server/                                  Go feed/owner backend (not used by the lock any more)
+```
+
+Build flags: `--dart-define=FLAVOR=dev|staging|prod`, `API_BASE_URL`, `TLS_PINS`
+(comma-separated base64 SHA-256 SPKI pins; prod refuses to build a client without them).
+
+Checks (also run by `.github/workflows/ci.yml`):
+
+```
+dart format --set-exit-if-changed lib test
+flutter analyze --fatal-infos
+flutter test --dart-define=LOCK_P1=... (any 4 strings)
 ```
