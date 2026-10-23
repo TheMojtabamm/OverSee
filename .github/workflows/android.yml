@@ -20,40 +20,8 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: "3.47.7"
           channel: stable
-
-      # Platform folders are not committed (see README); CI generates them so
-      # they always match the runner's Flutter version.
-      - name: Generate Android platform files
-        run: flutter create --platforms=android --org com.oversea .
-
-      # Overwrite the generated Gradle files with committed versions that pin
-      # compileSdk=36 and minSdk=24 (flutter create still provides wrapper jar,
-      # MainActivity, resources).
-      - name: Pin SDK versions (minSdk 24, compileSdk 36)
-        run: |
-          cp .github/android/build.gradle.kts android/build.gradle.kts
-          cp .github/android/app-build.gradle.kts android/app/build.gradle.kts
-          grep -rn "minSdk\|compileSdk" android/ || true
-
-      # AdMob requires an application-id meta-data in the manifest. Defaults to
-      # Google's public *test* app id unless the ADMOB_APP_ID secret is set.
-      - name: Inject AdMob app id into manifest
-        env:
-          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
-        run: |
-          ID="${ADMOB_APP_ID:-ca-app-pub-3940256099942544~3347511713}"
-          python3 - "$ID" <<'PY'
-          import sys
-          p="android/app/src/main/AndroidManifest.xml"
-          s=open(p).read()
-          meta='<meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="%s"/>' % sys.argv[1]
-          if "gms.ads.APPLICATION_ID" not in s:
-              s=s.replace("<application", "<application",1)
-              i=s.index(">", s.index("<application"))+1
-              s=s[:i]+"\n        "+meta+s[i:]
-          open(p,"w").write(s)
-          PY
 
       - name: Get packages
         run: flutter pub get
@@ -61,12 +29,16 @@ jobs:
       # LOCK_P1..P4 are injected here from a repo secret and is never stored in
       # the source tree. --obfuscate raises the bar on reversing the release binary.
       - name: Build APK (release)
+        env:
+          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
         run: >
           flutter build apk --release
           --dart-define=LOCK_P1=${{ secrets.LOCK_P1 }} --dart-define=LOCK_P2=${{ secrets.LOCK_P2 }} --dart-define=LOCK_P3=${{ secrets.LOCK_P3 }} --dart-define=LOCK_P4=${{ secrets.LOCK_P4 }} --dart-define=AD_INTERSTITIAL_ID=${{ secrets.AD_INTERSTITIAL_ID }}
           --obfuscate --split-debug-info=build/symbols
 
       - name: Build App Bundle (release, for Google Play)
+        env:
+          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
         run: >
           flutter build appbundle --release
           --dart-define=LOCK_P1=${{ secrets.LOCK_P1 }} --dart-define=LOCK_P2=${{ secrets.LOCK_P2 }} --dart-define=LOCK_P3=${{ secrets.LOCK_P3 }} --dart-define=LOCK_P4=${{ secrets.LOCK_P4 }} --dart-define=AD_INTERSTITIAL_ID=${{ secrets.AD_INTERSTITIAL_ID }}

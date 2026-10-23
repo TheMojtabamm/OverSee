@@ -1,6 +1,6 @@
 import "dart:convert";
 
-import "../models/vpn_config.dart";
+import "vpn_config.dart";
 
 /// Turns a standard text config (e.g. `vless://...`, `vmess://...`, `ss://...`)
 /// into a [VpnConfig]. This layer only detects the protocol and extracts

@@ -129,13 +129,14 @@ class VpnConfig {
     String? adText,
     String? telegramUrl,
     bool? locked,
+    bool clearHost = false,
   }) =>
       VpnConfig(
         id: id ?? this.id,
         name: name ?? this.name,
         protocol: protocol ?? this.protocol,
-        host: host ?? this.host,
-        port: port ?? this.port,
+        host: clearHost ? null : (host ?? this.host),
+        port: clearHost ? null : (port ?? this.port),
         raw: raw ?? this.raw,
         source: source ?? this.source,
         channelRef: channelRef ?? this.channelRef,

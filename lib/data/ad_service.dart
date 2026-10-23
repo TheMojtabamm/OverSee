@@ -1,4 +1,4 @@
-import "package:flutter/foundation.dart";
+import "../core/log.dart";
 import "package:google_mobile_ads/google_mobile_ads.dart";
 
 /// Shows one interstitial ad right after the user connects. The unit ID comes
@@ -8,8 +8,8 @@ import "package:google_mobile_ads/google_mobile_ads.dart";
 class AdService {
   static const String _testInterstitial =
       "ca-app-pub-3940256099942544/1033173712";
-  static const String _unitId =
-      String.fromEnvironment("AD_INTERSTITIAL_ID", defaultValue: _testInterstitial);
+  static const String _unitId = String.fromEnvironment("AD_INTERSTITIAL_ID",
+      defaultValue: _testInterstitial);
 
   static InterstitialAd? _ready;
   static bool _loading = false;
@@ -33,7 +33,7 @@ class AdService {
         },
         onAdFailedToLoad: (e) {
           _loading = false;
-          debugPrint("ad load failed: ${e.code}");
+          Log.d("ad load failed: ${e.code}");
         },
       ),
     );

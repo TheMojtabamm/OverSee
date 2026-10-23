@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.7"
+          channel: stable
+      - run: flutter pub get
+      - name: Format
+        run: dart format --set-exit-if-changed lib test
+      - name: Analyze
+        run: flutter analyze --fatal-infos
+      # Dummy key parts: tests only need *a* key, not the real one.
+      - name: Test
+        run: >
+          flutter test
+          --dart-define=LOCK_P1=aaaaaaaaaaaaaaaa --dart-define=LOCK_P2=bbbbbbbbbbbbbbbb
+          --dart-define=LOCK_P3=cccccccccccccccc --dart-define=LOCK_P4=dddddddddddddddd
+
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+      - run: go vet ./...
+      - run: go test ./...

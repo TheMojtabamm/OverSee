@@ -13,7 +13,7 @@ a local Flutter install to produce builds.
   later).
 - Add configs by paste or by subscription URL.
 - Local on-device storage (no account, no server needed to use the app).
-- **Locked-config system** (`lib/services/locked_config_codec.dart`): a
+- **Locked-config system** (`lib/domain/locked_config_codec.dart`, spec in `docs/LOCK_V3.md`): a
   time-rotating, key-injected format so configs can only be opened by this app.
 - **Free-config feed** client (`lib/services/free_configs_service.dart`): an
   in-app list of channels and their configs, served from your own feed server.
@@ -112,13 +112,25 @@ throwaway key so the APK still installs for testing.
 
 ```
 lib/
-  models/vpn_config.dart          config model + protocol enum
-  services/
-    config_parser.dart            parse standard config URIs
-    subscription_service.dart     import from a subscription URL
-    free_configs_service.dart     in-app free-config feed client
-    locked_config_codec.dart      locked-config encrypt/decrypt (rotating key)
-    config_store.dart             local persistence
-  main.dart                       minimal functional UI
-.github/workflows/                Android + Windows CI
+  main.dart, app.dart, providers.dart   entry, MaterialApp (fa/en, light/dark), Riverpod
+  core/                                  app_config (flavors), log (redacting), strings (fa/en),
+                                         http_client (Dio + SPKI pinning + bounded retry)
+  domain/                                vpn_config, config_parser, locked_config_codec (v3)
+  data/                                  config_store (Keystore storage + v1→v2 migration), ad_service
+  features/{shell,configs,add}/          UI
+android/                                 committed native project (R8, FLAG_SECURE, AdMob placeholder)
+docs/                                    ANDROID_PLAN, LOCK_V3, LOCK_OFFLINE, THREAT_MODEL
+test/                                    codec, parser, store migration, SPKI pin, i18n, log
+server/                                  Go feed/owner backend (not used by the lock any more)
+```
+
+Build flags: `--dart-define=FLAVOR=dev|staging|prod`, `API_BASE_URL`, `TLS_PINS`
+(comma-separated base64 SHA-256 SPKI pins; prod refuses to build a client without them).
+
+Checks (also run by `.github/workflows/ci.yml`):
+
+```
+dart format --set-exit-if-changed lib test
+flutter analyze --fatal-infos
+flutter test --dart-define=LOCK_P1=... (any 4 strings)
 ```

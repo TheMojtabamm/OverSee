@@ -58,7 +58,16 @@ class LockedConfigCodec {
   ];
 
   /// Rotating mask mixed in when reassembling (not secret by itself).
-  static const List<int> _mask = [0x5e, 0x27, 0x93, 0xc1, 0x6f, 0x0a, 0xd8, 0x44];
+  static const List<int> _mask = [
+    0x5e,
+    0x27,
+    0x93,
+    0xc1,
+    0x6f,
+    0x0a,
+    0xd8,
+    0x44
+  ];
 
   static bool get hasKey => _parts.every((p) => p.isNotEmpty);
 
@@ -169,6 +178,7 @@ class LockedConfigCodec {
     final clear = await aes.decrypt(
       SecretBox(cipherText, nonce: nonce, mac: Mac(macBytes)),
       secretKey: key,
+      aad: header,
     );
     final plain = utf8.decode(clear);
 
