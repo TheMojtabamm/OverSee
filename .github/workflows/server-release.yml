@@ -1,8 +1,14 @@
 name: Server release
 
-# Tag `server-v1.0.0` to publish the `oversee` binaries + install.sh as release assets.
+# Publishes the `oversee` binaries + install.sh.
+#   * every push to main that touches server/**  ->  the rolling release `server-latest`
+#     (this is what the one-line installer downloads, so it always gets the newest server);
+#   * a tag `server-v1.2.3`                      ->  a pinned release (OVERSEE_VERSION=server-v1.2.3);
+#   * manual run                                 ->  the rolling release from the chosen ref.
 on:
   push:
+    branches: [main]
+    paths: ["server/**", ".github/workflows/server-release.yml"]
     tags: ["server-v*"]
   workflow_dispatch:
 
@@ -23,7 +29,7 @@ jobs:
       - run: go vet ./... && go test ./...
       - name: Build
         run: |
-          VER="${GITHUB_REF_NAME:-dev}"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then VER="$GITHUB_REF_NAME"; else VER="server-latest-${GITHUB_SHA::7}"; fi
           mkdir -p dist
           for ARCH in amd64 arm64; do
             CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH go build -trimpath \
@@ -35,6 +41,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
-            --title "Server $GITHUB_REF_NAME" --notes "oversee gate manager" \
-            || gh release upload "$GITHUB_REF_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            TAG="$GITHUB_REF_NAME"; LATEST=false
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --latest=$LATEST \
+              --title "Server $TAG" --notes "oversee gate manager" \
+              || gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            # Rolling release: recreate it so the tag moves to this commit. It is never marked
+            # "latest", so it can't hijack /releases/latest (that belongs to the app release).
+            TAG=server-latest
+            gh release delete "$TAG" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --latest=false --prerelease=false --title "Server (latest)" \
+              --notes "Rolling build of the oversee gate manager from $GITHUB_SHA. Install: see README."
+          fi
