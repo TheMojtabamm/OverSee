@@ -121,7 +121,12 @@ jobs:
           LOCK_P3: ${{ secrets.LOCK_P3 }}
           LOCK_P4: ${{ secrets.LOCK_P4 }}
           GATE_KEY: ${{ secrets.GATE_KEY }}
-        run: tool/verify_apk_secrets.sh build/app/outputs/flutter-apk/app-release.apk
+        run: |
+          if [ -z "$LOCK_P1$LOCK_P2$LOCK_P3$LOCK_P4$GATE_KEY" ] && [ "${{ inputs.test_build }}" = true ]; then
+            echo "::warning::LOCK_P1..P4 / GATE_KEY are not set: this test APK cannot open locked files (it fails closed)."
+            exit 0
+          fi
+          tool/verify_apk_secrets.sh build/app/outputs/flutter-apk/app-release.apk
 
       # Re-sign with a stable release key (from secrets). If the secret is not set,
       # fall back to a throwaway key so the APK is still installable for testing.
