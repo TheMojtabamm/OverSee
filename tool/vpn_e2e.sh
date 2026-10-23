@@ -57,7 +57,9 @@ TEST=$!
 # `flutter test` only relays the app's prints late; the marker is in logcat the moment it happens.
 UP=0
 for i in $(seq 1 120); do
-  if adb logcat -d 2>/dev/null | grep -q "E2E_TUNNEL_UP"; then UP=1; break; fi
+  # The test's own print is not in logcat; its probe request (made right after the tunnel is up)
+  # is: Xray logs "tunneling request to tcp:example.com:80" for it.
+  if adb logcat -d 2>/dev/null | grep -q "tunneling request to tcp:example.com:80"; then UP=1; break; fi
   kill -0 $TEST 2>/dev/null || break
   sleep 2
 done
