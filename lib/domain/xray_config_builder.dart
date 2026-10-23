@@ -36,6 +36,9 @@ class TunnelOptions {
   /// Adds the loopback probe proxy (see [ProbeEndpoint]).
   final ProbeEndpoint? probe;
 
+  /// Xray log level ("warning" normally; "info"/"debug" for diagnostics).
+  final String logLevel;
+
   const TunnelOptions({
     this.dohServers = const [
       "https://1.1.1.1/dns-query",
@@ -47,6 +50,7 @@ class TunnelOptions {
     this.mtu = 1500,
     this.gateToken,
     this.probe,
+    this.logLevel = "warning",
   });
 }
 
@@ -110,7 +114,7 @@ class XrayConfigBuilder {
     ];
 
     final config = <String, dynamic>{
-      "log": {"loglevel": "warning"},
+      "log": {"loglevel": opts.logLevel},
       "stats": {},
       "policy": {
         "system": {"statsOutboundUplink": true, "statsOutboundDownlink": true},
