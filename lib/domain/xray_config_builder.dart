@@ -204,6 +204,26 @@ class XrayConfigBuilder {
     return config;
   }
 
+  /// True when [link] sends its traffic to the server without TLS/Reality and without VLESS
+  /// encryption (a plain `vless://…security=none`, or trojan without TLS): anyone on the path
+  /// can read it. Such configs work, but the UI says so.
+  static bool isUnencrypted(String link) {
+    try {
+      final l = link.trim();
+      final scheme = l.split("://").first.toLowerCase();
+      if (scheme != "vless" && scheme != "trojan") return false;
+      final sec = (_outbound(l)["streamSettings"] as Map?)?["security"];
+      if (sec == "tls" || sec == "reality") return false;
+      if (scheme == "vless" &&
+          (Uri.parse(l).queryParameters["encryption"] ?? "none") != "none") {
+        return false;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ---- gate ----------------------------------------------------------------
 
   /// Transports where the gate can check one header per connection. XHTTP in

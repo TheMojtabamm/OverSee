@@ -190,4 +190,20 @@ void main() {
     expect(sniffing["routeOnly"], isFalse);
     expect(sniffing["destOverride"], containsAll(["http", "tls"]));
   });
+
+  test("plain vless (no TLS) builds and is flagged as not encrypted", () {
+    const plain =
+        "vless://b7dd9763-7399-4e5f-bcf3-8dc2a17b72d5@ir.example.com:1001"
+        "?encryption=none&security=none&type=ws&host=ir.example.com&path=%2Fabc#x";
+    expect(() => XrayConfigBuilder.build(plain), returnsNormally);
+    expect(XrayConfigBuilder.isUnencrypted(plain), isTrue);
+    expect(XrayConfigBuilder.isUnencrypted(vless), isFalse); // tls fixture
+    expect(
+        XrayConfigBuilder.isUnencrypted("trojan://p@h.example.com:443"
+            "?security=none&type=tcp"),
+        isTrue);
+    expect(XrayConfigBuilder.isUnencrypted("trojan://p@h.example.com:443"),
+        isFalse); // trojan defaults to TLS
+    expect(XrayConfigBuilder.isUnencrypted("garbage"), isFalse);
+  });
 }

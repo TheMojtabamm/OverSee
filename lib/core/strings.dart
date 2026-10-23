@@ -25,6 +25,7 @@ class S {
       "empty_hint":
           "Open the Add tab to paste a config or import a locked file.",
       "locked": "Locked",
+      "no_tls": "Not encrypted",
       "connect_ok": "Connected",
       "channel": "Channel",
       "open_channel": "Open Channel",

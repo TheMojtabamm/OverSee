@@ -6,6 +6,7 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "../../core/strings.dart";
 import "../../data/tunnel_service.dart";
 import "../../domain/vpn_config.dart";
+import "../../domain/xray_config_builder.dart";
 import "../../providers.dart";
 import "../../ui/connect_button.dart";
 import "../../ui/theme.dart";
@@ -443,6 +444,9 @@ class ConfigCard extends ConsumerWidget {
                         if (cfg.gated)
                           Pill("Gate",
                               icon: Icons.shield_moon_rounded, color: c.brand),
+                        if (XrayConfigBuilder.isUnencrypted(cfg.raw))
+                          Pill(s.t("no_tls"),
+                              icon: Icons.lock_open_rounded, color: c.warn),
                         if (expired) Pill(s.t("expired"), color: c.bad),
                         if (!cfg.locked && cfg.host != null) Pill(cfg.host!),
                       ],
