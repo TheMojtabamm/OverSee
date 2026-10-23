@@ -31,3 +31,5 @@ server/*.exe
 server/bin/
 .env.local
 .claude/
+.flutter-plugins-dependencies
+.flutter-plugins
