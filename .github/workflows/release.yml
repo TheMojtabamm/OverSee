@@ -6,6 +6,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      test_build:
+        description: "Test build: skip the AdMob check, keep the APK as a build artifact (no Release)"
+        type: boolean
+        default: true
 
 permissions:
   contents: write # needed to create the Release and upload assets
@@ -15,6 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Name of the APK
+        run: echo "APK_NAME=oversea-$(echo '${{ github.ref_name }}' | tr '/' '-').apk" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@v4
         with:
@@ -81,7 +89,7 @@ jobs:
       # A release without real AdMob IDs would serve Google's *test* ads and earn nothing.
       # Tags containing "-test" (e.g. v1.0.0-test1) skip this check and are published as pre-releases.
       - name: Require real AdMob IDs
-        if: ${{ !contains(github.ref_name, '-test') }}
+        if: ${{ !contains(github.ref_name, '-test') && inputs.test_build != true }}
         env:
           ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
           AD_INTERSTITIAL_ID: ${{ secrets.AD_INTERSTITIAL_ID }}
@@ -124,18 +132,27 @@ jobs:
           "$ANDROID_HOME/build-tools/$BT/apksigner" sign \
             --ks release.jks --ks-pass "pass:$KS_PASS" \
             --ks-key-alias "$KEY_ALIAS" --key-pass "pass:$KEY_PASS" \
-            --out oversea-${{ github.ref_name }}.apk \
+            --out ${{ env.APK_NAME }} \
             build/app/outputs/flutter-apk/app-release.apk
-          "$ANDROID_HOME/build-tools/$BT/apksigner" verify --verbose oversea-${{ github.ref_name }}.apk
+          "$ANDROID_HOME/build-tools/$BT/apksigner" verify --verbose ${{ env.APK_NAME }}
+
+      - name: Keep the APK as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK_NAME }}
+          path: ${{ env.APK_NAME }}
+          retention-days: 14
 
       - name: Publish Release with the raw APK
+        if: ${{ github.ref_type == 'tag' }}
         uses: softprops/action-gh-release@v2
         with:
-          files: oversea-${{ github.ref_name }}.apk
+          files: ${{ env.APK_NAME }}
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-test') }}
 
   windows:
+    if: ${{ github.ref_type == 'tag' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
