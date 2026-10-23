@@ -4,6 +4,8 @@ import "dart:typed_data";
 
 import "package:cryptography/cryptography.dart";
 
+import "creator_identity.dart";
+
 /// Locked-config system (format v3).
 ///
 /// What this protects against
@@ -108,16 +110,29 @@ class LockedConfigCodec {
 
   /// Locks a raw Xray config (and optional owner ad / telegram link) into a
   /// base64url blob suitable for writing to a `.ovsea` file or sharing as text.
+  ///
+  /// When [signer] is given, the file carries the creator's public key and an
+  /// Ed25519 signature over (config, ad, link, generation). Opening it reports who
+  /// made it, and any later edit of the ad or link invalidates the signature.
   static Future<String> encode(
     String plaintextConfig, {
     String? adText,
     String? telegramUrl,
+    CreatorIdentity? signer,
   }) async {
+    final ad = (adText != null && adText.isNotEmpty) ? adText : null;
+    final tg =
+        (telegramUrl != null && telegramUrl.isNotEmpty) ? telegramUrl : null;
     final payload = jsonEncode({
       "c": plaintextConfig,
-      if (adText != null && adText.isNotEmpty) "a": adText,
-      if (telegramUrl != null && telegramUrl.isNotEmpty) "t": telegramUrl,
+      if (ad != null) "a": ad,
+      if (tg != null) "t": tg,
       "g": keyGeneration,
+      if (signer != null) ...{
+        "p": base64.encode(signer.publicKey),
+        "s": base64.encode(await signer
+            .sign(_signedBytes(plaintextConfig, ad, tg, keyGeneration))),
+      },
     });
 
     final rnd = Random.secure();
@@ -183,12 +198,32 @@ class LockedConfigCodec {
     final plain = utf8.decode(clear);
 
     final j = jsonDecode(plain) as Map<String, dynamic>;
-    return ConfigEnvelope(
-      j["c"] as String,
-      adText: j["a"] as String?,
-      telegramUrl: j["t"] as String?,
-    );
+    final c = j["c"] as String;
+    final a = j["a"] as String?;
+    final t = j["t"] as String?;
+    final g = (j["g"] as num?)?.toInt() ?? 0;
+
+    String? creator;
+    final p = j["p"] as String?;
+    final sg = j["s"] as String?;
+    if (p != null && sg != null) {
+      try {
+        final pub = base64.decode(p);
+        final sig = base64.decode(sg);
+        if (await CreatorIdentity.verify(_signedBytes(c, a, t, g), sig, pub)) {
+          creator = fingerprintOf(pub);
+        }
+      } catch (_) {
+        // malformed signature material => treated as unsigned
+      }
+    }
+    return ConfigEnvelope(c, adText: a, telegramUrl: t, creator: creator);
   }
+
+  /// Canonical bytes the signature covers. A JSON array keeps field boundaries
+  /// unambiguous (no "ab"+"c" vs "a"+"bc" confusion).
+  static List<int> _signedBytes(String c, String? a, String? t, int g) =>
+      utf8.encode("ovsea-sig-v1\n${jsonEncode([c, a ?? "", t ?? "", g])}");
 
   /// Cheap check whether a string looks like one of our v3 locked blobs.
   static bool looksLocked(String s) {
@@ -215,5 +250,10 @@ class ConfigEnvelope {
   final String config;
   final String? adText;
   final String? telegramUrl;
-  const ConfigEnvelope(this.config, {this.adText, this.telegramUrl});
+
+  /// Fingerprint of the creator whose signature verified, or null when the file is
+  /// unsigned or the signature does not match.
+  final String? creator;
+  const ConfigEnvelope(this.config,
+      {this.adText, this.telegramUrl, this.creator});
 }

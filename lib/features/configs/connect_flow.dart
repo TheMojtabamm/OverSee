@@ -51,7 +51,7 @@ Future<void> _connect(BuildContext context, WidgetRef ref, VpnConfig c) async {
 
   // 1. Third-party (owner) message, clearly labelled.
   if (c.locked) {
-    final ok = await _showSponsored(context, c);
+    final ok = await _showSponsored(context, ref, c);
     if (!ok || !context.mounted) return;
   }
 
@@ -143,11 +143,14 @@ Future<void> _connect(BuildContext context, WidgetRef ref, VpnConfig c) async {
 
 /// Owner-supplied text/link from a locked file. Third-party content, so: labelled
 /// "Sponsored", sanitised, https Telegram links only, and the choice is explicit.
-Future<bool> _showSponsored(BuildContext context, VpnConfig c) async {
+Future<bool> _showSponsored(
+    BuildContext context, WidgetRef ref, VpnConfig c) async {
   final s = S.of(context);
   final text = AdContent.text(c.adText);
   final url = AdContent.channelUrl(c.telegramUrl);
   if (text == null && url == null) return true;
+  final trusted = await ref.read(trustedCreatorsProvider.future);
+  if (!context.mounted) return false;
 
   final proceed = await showDialog<bool>(
     context: context,
@@ -167,6 +170,10 @@ Future<bool> _showSponsored(BuildContext context, VpnConfig c) async {
               padding: const EdgeInsets.only(top: 12),
               child: Text(text, textAlign: TextAlign.center),
             ),
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: _CreatorLine(creator: c.creator, trusted: trusted),
+          ),
           if (url != null)
             Padding(
               padding: const EdgeInsets.only(top: 12),
@@ -190,4 +197,66 @@ Future<bool> _showSponsored(BuildContext context, VpnConfig c) async {
     ),
   );
   return proceed == true;
+}
+
+class _CreatorLine extends ConsumerWidget {
+  final String? creator;
+  final Set<String> trusted;
+  const _CreatorLine({required this.creator, required this.trusted});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = S.of(context);
+    final style = Theme.of(context).textTheme.bodySmall;
+    final fp = creator;
+    if (fp == null) {
+      return Text(s.t("creator_unsigned"),
+          style: style?.copyWith(color: Colors.orange),
+          textAlign: TextAlign.center);
+    }
+    final isTrusted =
+        ref.watch(trustedCreatorsProvider).valueOrNull?.contains(fp) ??
+            trusted.contains(fp);
+    return Column(
+      children: [
+        Text(
+          "${isTrusted ? s.t("creator_verified") : s.t("creator_unknown")}\n$fp",
+          style:
+              style?.copyWith(color: isTrusted ? Colors.green : Colors.orange),
+          textAlign: TextAlign.center,
+          textDirection: TextDirection.ltr,
+        ),
+        TextButton(
+          onPressed: () => ref
+              .read(trustedCreatorsProvider.notifier)
+              .setTrusted(fp, !isTrusted),
+          child: Text(isTrusted ? s.t("untrust") : s.t("trust")),
+        ),
+      ],
+    );
+  }
+}
+
+/// Measure one config's latency through its own outbound (does not need the VPN on).
+Future<void> testPing(WidgetRef ref, VpnConfig c) async {
+  final ping = ref.read(pingProvider.notifier);
+  ping.set(c.id, -2);
+  try {
+    final settings = await ref.read(settingsProvider.future);
+    final json = XrayConfigBuilder.build(c.raw, settings.toOptions());
+    ping.set(c.id, await ref.read(tunnelServiceProvider).testDelay(json));
+  } on UnsupportedConfigException {
+    ping.set(c.id, -1);
+  }
+}
+
+/// Tests every config (a few at a time) and returns when done.
+Future<void> testAllPings(WidgetRef ref, List<VpnConfig> configs) async {
+  const parallel = 3;
+  final queue = List<VpnConfig>.of(configs);
+  await Future.wait(List.generate(parallel, (_) async {
+    while (queue.isNotEmpty) {
+      await testPing(ref, queue.removeLast());
+    }
+  }));
 }

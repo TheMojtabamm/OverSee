@@ -23,6 +23,14 @@ class ConfigsScreen extends ConsumerWidget {
             "${s.t("configs_title")} (${configs.valueOrNull?.length ?? 0})"),
         actions: [
           IconButton(
+            icon: const Icon(Icons.speed),
+            tooltip: s.t("test_all"),
+            onPressed: () {
+              final l = configs.valueOrNull;
+              if (l != null) testAllPings(ref, l);
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.settings),
             tooltip: s.t("settings"),
             onPressed: () => Navigator.push(
@@ -60,14 +68,33 @@ class ConfigsScreen extends ConsumerWidget {
                         ),
                       ),
                     )
-                  : ListView.builder(
-                      itemCount: list.length,
-                      itemBuilder: (_, i) => _ConfigTile(config: list[i]),
-                    ),
+                  : _ConfigList(list: list),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ConfigList extends ConsumerWidget {
+  final List<VpnConfig> list;
+  const _ConfigList({required this.list});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ping = ref.watch(pingProvider);
+    // Fastest first; untested keep their order; failed go last.
+    int rank(VpnConfig c) {
+      final p = ping[c.id];
+      if (p == null || p == -2) return 1 << 29;
+      return p < 0 ? 1 << 30 : p;
+    }
+
+    final sorted = [...list]..sort((a, b) => rank(a).compareTo(rank(b)));
+    return ListView.builder(
+      itemCount: sorted.length,
+      itemBuilder: (_, i) => _ConfigTile(config: sorted[i]),
     );
   }
 }
@@ -135,6 +162,7 @@ class _ConfigTile extends ConsumerWidget {
     final s = S.of(context);
     final c = config;
     final st = ref.watch(tunnelStateProvider).valueOrNull ?? TunnelState.idle;
+    final ms = ref.watch(pingProvider)[c.id];
     final isActive = ref.watch(activeConfigIdProvider) == c.id &&
         (st.phase == TunnelPhase.connected ||
             st.phase == TunnelPhase.connecting);
@@ -157,6 +185,23 @@ class _ConfigTile extends ConsumerWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (ms != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: ms == -2
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : Text(
+                        ms < 0 ? s.t("failed") : "$ms ${s.t("ms")}",
+                        style: TextStyle(
+                          color: ms < 0
+                              ? Colors.red
+                              : (ms < 400 ? Colors.green : Colors.amber),
+                        ),
+                      ),
+              ),
             // Locked configs cannot be re-shared: that would allow re-locking
             // them under someone else's name.
             if (!c.locked)
@@ -164,6 +209,10 @@ class _ConfigTile extends ConsumerWidget {
                 icon: const Icon(Icons.share, size: 20),
                 onPressed: () => showShareSheet(context, c),
               ),
+            IconButton(
+              icon: const Icon(Icons.network_ping, size: 20),
+              onPressed: () => testPing(ref, c),
+            ),
             IconButton(
               icon: const Icon(Icons.delete, size: 20, color: Colors.red),
               onPressed: () => ref.read(configsProvider.notifier).remove(c.id),

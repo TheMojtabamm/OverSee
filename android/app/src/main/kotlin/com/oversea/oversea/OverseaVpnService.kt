@@ -6,7 +6,12 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
+import android.os.PowerManager
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import libv2ray.CoreCallbackHandler
@@ -33,6 +38,7 @@ class OverseaVpnService : VpnService() {
     private var killSwitch = false
     @Volatile private var userStop = false
     private var lastLabel = ""
+    private var netCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -82,6 +88,7 @@ class OverseaVpnService : VpnService() {
             TunnelBridge.setState("connected")
             updateNotification(getString(R.string.tunnel_connected, req.label))
             startStats()
+            watchUnderlyingNetwork()
         } catch (e: Throwable) {
             // Do not echo e.message: it may contain parts of the config.
             fail("Could not start the tunnel (${e.javaClass.simpleName})")
@@ -152,6 +159,7 @@ class OverseaVpnService : VpnService() {
 
     private fun teardown() {
         stopStats()
+        unwatchNetwork()
         runCatching { core?.stopLoop() }
         core = null
         runCatching { tun?.close() }
@@ -159,10 +167,46 @@ class OverseaVpnService : VpnService() {
         if (userStop) TunnelBridge.setState("disconnected")
     }
 
+    /**
+     * Tells Android which physical network the tunnel rides on, and keeps it current
+     * when the phone moves between Wi-Fi and mobile data. Without this, the system
+     * reports the VPN as having no underlying network (wrong "connected" state,
+     * stalled apps after a switch). Xray's own sockets (this app is excluded from
+     * the VPN) follow the new default route, so new connections recover on their own.
+     */
+    private fun watchUnderlyingNetwork() {
+        val cm = getSystemService(ConnectivityManager::class.java)
+        unwatchNetwork()
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                setUnderlyingNetworks(arrayOf(network))
+            }
+            override fun onLost(network: Network) {
+                setUnderlyingNetworks(null)
+            }
+        }
+        val req = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            .build()
+        runCatching { cm.registerNetworkCallback(req, cb) }.onSuccess { netCallback = cb }
+    }
+
+    private fun unwatchNetwork() {
+        val cb = netCallback ?: return
+        runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(cb) }
+        netCallback = null
+    }
+
     private fun startStats() {
         val ex = Executors.newSingleThreadScheduledExecutor()
         stats = ex
+        val pm = getSystemService(PowerManager::class.java)
         ex.scheduleWithFixedDelay({
+            // Nobody sees the numbers with the screen off; skip the native call and
+            // the UI event so the CPU can stay idle. (Counters keep accumulating in
+            // the core and are picked up on the next tick.)
+            if (!pm.isInteractive) return@scheduleWithFixedDelay
             val c = core ?: return@scheduleWithFixedDelay
             runCatching {
                 var u = 0L
@@ -194,6 +238,7 @@ class OverseaVpnService : VpnService() {
     override fun onDestroy() {
         userStop = true
         stopStats()
+        unwatchNetwork()
         runCatching { core?.stopLoop() }
         runCatching { tun?.close() }
         worker.shutdown()

@@ -17,6 +17,21 @@ class SettingsStore {
   Future<void> save(TunnelSettings s) async =>
       (await SharedPreferences.getInstance()).setString(_settings, s.toJson());
 
+  static const _trusted = "trusted_creators_v1";
+
+  /// Fingerprints of creators the user chose to trust (e.g. a channel's official ID).
+  Future<Set<String>> trustedCreators() async =>
+      ((await SharedPreferences.getInstance()).getStringList(_trusted) ??
+              const [])
+          .toSet();
+
+  Future<void> setTrusted(String fingerprint, bool trusted) async {
+    final p = await SharedPreferences.getInstance();
+    final cur = (p.getStringList(_trusted) ?? const <String>[]).toSet();
+    trusted ? cur.add(fingerprint) : cur.remove(fingerprint);
+    await p.setStringList(_trusted, cur.toList());
+  }
+
   Future<bool> disclosureAccepted() async =>
       (await SharedPreferences.getInstance()).getBool(_disclosure) ?? false;
 

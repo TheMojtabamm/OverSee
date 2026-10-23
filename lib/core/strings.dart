@@ -87,6 +87,17 @@ class S {
       "privacy_policy": "Privacy policy",
       "ad_privacy": "Ad privacy options",
       "no_policy": "No policy URL configured in this build.",
+      "creator_verified": "Verified creator",
+      "creator_unknown": "Creator (not trusted)",
+      "creator_unsigned": "Unsigned file — creator unknown",
+      "trust": "Trust",
+      "untrust": "Remove trust",
+      "your_creator_id": "Your creator ID",
+      "your_creator_hint":
+          "Publish this in your channel so followers can recognise your official files.",
+      "test_all": "Test all",
+      "ms": "ms",
+      "failed": "failed",
     },
     "fa": {
       "tab_configs": "کانفیگ‌ها",
@@ -157,6 +168,17 @@ class S {
       "privacy_policy": "سیاست حفظ حریم خصوصی",
       "ad_privacy": "گزینه‌های حریم خصوصی تبلیغات",
       "no_policy": "در این نسخه نشانی سیاست حریم خصوصی تنظیم نشده است.",
+      "creator_verified": "سازنده‌ی تأییدشده",
+      "creator_unknown": "سازنده (مورد اعتماد نیست)",
+      "creator_unsigned": "فایل بدون امضا — سازنده نامشخص",
+      "trust": "اعتماد",
+      "untrust": "حذف اعتماد",
+      "your_creator_id": "شناسه‌ی سازنده‌ی شما",
+      "your_creator_hint":
+          "این را در کانالتان منتشر کنید تا دنبال‌کنندگان فایل‌های رسمی شما را تشخیص دهند.",
+      "test_all": "تست همه",
+      "ms": "ms",
+      "failed": "ناموفق",
     },
   };
 }

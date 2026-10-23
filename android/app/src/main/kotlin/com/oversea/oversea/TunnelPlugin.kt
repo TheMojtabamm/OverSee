@@ -12,9 +12,15 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import libv2ray.Libv2ray
+import java.util.concurrent.Executors
 
 /** Flutter <-> native bridge for the tunnel. All heavy work happens in [OverseaVpnService]. */
 class TunnelPlugin(private val activity: Activity) : MethodChannel.MethodCallHandler {
+
+    // Delay tests block for up to ~12 s each, so they never run on the UI thread.
+    private val testPool = Executors.newFixedThreadPool(3)
+    private val ui = android.os.Handler(android.os.Looper.getMainLooper())
 
     private var pendingPrepare: MethodChannel.Result? = null
     private var pendingNotif: MethodChannel.Result? = null
@@ -41,6 +47,7 @@ class TunnelPlugin(private val activity: Activity) : MethodChannel.MethodCallHan
                 result.success(null)
             }
             "status" -> result.success(TunnelBridge.snapshot())
+            "testDelay" -> testDelay(call, result)
             "listApps" -> result.success(listApps())
             "openVpnSettings" -> {
                 activity.startActivity(Intent(Settings.ACTION_VPN_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -88,6 +95,24 @@ class TunnelPlugin(private val activity: Activity) : MethodChannel.MethodCallHan
         pendingNotif?.success(granted)
         pendingNotif = null
         return true
+    }
+
+    /** Measures round-trip through the config's outbound; -1 on failure. */
+    private fun testDelay(call: MethodCall, result: MethodChannel.Result) {
+        val config = call.argument<String>("config")
+        val url = call.argument<String>("url") ?: "https://www.google.com/generate_204"
+        if (config.isNullOrEmpty()) {
+            result.success(-1L)
+            return
+        }
+        testPool.execute {
+            val ms = try {
+                Libv2ray.measureOutboundDelay(config, url)
+            } catch (e: Throwable) {
+                -1L
+            }
+            ui.post { result.success(ms) }
+        }
     }
 
     // ---- start / apps ------------------------------------------------------

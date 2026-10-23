@@ -72,6 +72,9 @@ class VpnConfig {
   /// shown, copied, shared as plain text or turned into a QR — only connected.
   final bool locked;
 
+  /// Verified creator fingerprint from a signed locked file (null = unsigned).
+  final String? creator;
+
   const VpnConfig({
     required this.id,
     required this.name,
@@ -84,6 +87,7 @@ class VpnConfig {
     this.adText,
     this.telegramUrl,
     this.locked = false,
+    this.creator,
   });
 
   Map<String, dynamic> toJson() => {
@@ -98,6 +102,7 @@ class VpnConfig {
         "adText": adText,
         "telegramUrl": telegramUrl,
         "locked": locked,
+        "creator": creator,
       };
 
   factory VpnConfig.fromJson(Map<String, dynamic> j) => VpnConfig(
@@ -115,6 +120,7 @@ class VpnConfig {
         adText: j["adText"] as String?,
         telegramUrl: j["telegramUrl"] as String?,
         locked: (j["locked"] as bool?) ?? false,
+        creator: j["creator"] as String?,
       );
 
   VpnConfig copyWith({
@@ -129,6 +135,7 @@ class VpnConfig {
     String? adText,
     String? telegramUrl,
     bool? locked,
+    String? creator,
     bool clearHost = false,
   }) =>
       VpnConfig(
@@ -143,5 +150,6 @@ class VpnConfig {
         adText: adText ?? this.adText,
         telegramUrl: telegramUrl ?? this.telegramUrl,
         locked: locked ?? this.locked,
+        creator: creator ?? this.creator,
       );
 }

@@ -7,6 +7,7 @@ import "package:share_plus/share_plus.dart";
 
 import "../../app.dart";
 import "../../core/log.dart";
+import "../../data/identity_store.dart";
 import "../../core/strings.dart";
 import "../../domain/ad_content.dart";
 import "../../domain/locked_config_codec.dart";
@@ -65,10 +66,12 @@ class _ShareSheetState extends State<_ShareSheet> {
           _snack(s.t("invalid_tg"));
           return;
         }
+        final identity = await IdentityStore().load();
         final blob = await LockedConfigCodec.encode(
           c.raw,
           adText: AdContent.text(_adCtrl.text),
           telegramUrl: tg,
+          signer: identity,
         );
         final name = "oversea_${DateTime.now().millisecondsSinceEpoch}.ovsea";
         // File only — no plaintext, and no blob in the message text.

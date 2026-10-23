@@ -2,6 +2,7 @@ import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
 import "data/config_store.dart";
+import "data/identity_store.dart";
 import "data/settings_store.dart";
 import "data/tunnel_service.dart";
 import "domain/tunnel_settings.dart";
@@ -69,3 +70,32 @@ final tunnelStateProvider = StreamProvider<TunnelState>((ref) async* {
 
 /// Which saved config the user last asked to connect.
 final activeConfigIdProvider = StateProvider<String?>((ref) => null);
+
+final identityStoreProvider = Provider<IdentityStore>((ref) => IdentityStore());
+
+class TrustedCreatorsNotifier extends AsyncNotifier<Set<String>> {
+  @override
+  Future<Set<String>> build() =>
+      ref.read(settingsStoreProvider).trustedCreators();
+
+  Future<void> setTrusted(String fingerprint, bool trusted) async {
+    await ref.read(settingsStoreProvider).setTrusted(fingerprint, trusted);
+    state = AsyncData(await ref.read(settingsStoreProvider).trustedCreators());
+  }
+}
+
+final trustedCreatorsProvider =
+    AsyncNotifierProvider<TrustedCreatorsNotifier, Set<String>>(
+        TrustedCreatorsNotifier.new);
+
+/// Per-config latency in ms: absent = untested, -1 = failed, -2 = testing.
+class PingNotifier extends Notifier<Map<String, int>> {
+  @override
+  Map<String, int> build() => const {};
+
+  void set(String id, int ms) => state = {...state, id: ms};
+  void clear() => state = const {};
+}
+
+final pingProvider =
+    NotifierProvider<PingNotifier, Map<String, int>>(PingNotifier.new);

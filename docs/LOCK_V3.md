@@ -58,12 +58,26 @@ APK. A determined reverse engineer can recover the secret and write a decoder.
 v3 raises the cost and makes a stolen secret expire with each release; it does
 not make extraction impossible.
 
-## Planned next (not yet implemented)
+## Creator signatures (implemented)
 
-* **Ed25519 signature** over the header+ciphertext with the owner's private key,
-  verified in-app with an embedded public key. Without it, anyone who recovers
-  the secret can also *create* valid files (e.g. re-lock a stolen config under
-  their own ad/channel). With it, a recovered secret only allows reading.
+Every file made by `Lock & share` is signed by the creating device's Ed25519
+identity (`lib/domain/creator_identity.dart`, seed in Keystore-backed storage).
+The signature (inside the encrypted payload) covers config, ad, link and key
+generation. On import the app shows the creator's fingerprint (`3FA9-0C21-…`)
+and whether the user has marked it **trusted**.
+
+What this gives you: a channel owner publishes their fingerprint once; a file
+whose fingerprint differs is visibly *not* theirs.
+
+What it does **not** give you — read this: the app lets *any* user lock a config
+with their own ad, so an attacker who has the plaintext (decoded via an
+extracted secret) can legitimately sign a re-branded copy with *their own* key.
+There is no way to forbid that while ordinary users can lock too. The defence is
+recognition (fingerprint + "trusted"), not prevention. Preventing it would need
+either owner-only locking (a separate owner app/CLI holding a key the public app
+never contains) or a server that vouches for creators.
+
+## Planned next (not yet implemented)
 * Move the open/derive path into native code (C++/JNI) with per-build generated
   constants.
 * Per-blob credentials with expiry on the owner's Xray panel (leak = revoke).

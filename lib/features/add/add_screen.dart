@@ -121,6 +121,7 @@ class _AddScreenState extends ConsumerState<AddScreen> {
               adText: AdContent.text(env.adText),
               telegramUrl: AdContent.channelUrl(env.telegramUrl),
               locked: true,
+              creator: env.creator,
             ))
         .toList();
     await ref.read(configsProvider.notifier).addAll(stored);

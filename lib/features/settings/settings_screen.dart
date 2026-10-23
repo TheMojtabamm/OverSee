@@ -1,4 +1,5 @@
 import "package:flutter/material.dart";
+import "package:flutter/services.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:url_launcher/url_launcher.dart";
 
@@ -97,6 +98,27 @@ class SettingsScreen extends ConsumerWidget {
                     builder: (_) => const AppPickerScreen()),
               ),
             ),
+          const Divider(),
+          FutureBuilder<String>(
+            future: ref
+                .read(identityStoreProvider)
+                .load()
+                .then((i) => i.fingerprint),
+            builder: (_, snap) => ListTile(
+              title: Text(s.t("your_creator_id")),
+              subtitle:
+                  Text("${snap.data ?? "…"}\n${s.t("your_creator_hint")}"),
+              isThreeLine: true,
+              trailing: const Icon(Icons.copy, size: 18),
+              onTap: snap.data == null
+                  ? null
+                  : () {
+                      Clipboard.setData(ClipboardData(text: snap.data!));
+                      ScaffoldMessenger.of(context)
+                          .showSnackBar(SnackBar(content: Text(s.t("copied"))));
+                    },
+            ),
+          ),
           const Divider(),
           ListTile(
             title: Text(s.t("privacy_policy")),

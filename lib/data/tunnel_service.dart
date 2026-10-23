@@ -75,6 +75,21 @@ class TunnelService {
     }
   }
 
+  /// Round-trip through the config's outbound in ms, or -1 on failure/timeout.
+  Future<int> testDelay(String configJson,
+      {String url = "https://www.google.com/generate_204"}) async {
+    try {
+      return (await _m.invokeMethod<num>(
+                  "testDelay", {"config": configJson, "url": url}))
+              ?.toInt() ??
+          -1;
+    } on MissingPluginException {
+      return -1;
+    } on PlatformException {
+      return -1;
+    }
+  }
+
   Future<TunnelState> status() async {
     try {
       final m = await _m.invokeMethod<Map<Object?, Object?>>("status");
