@@ -15,5 +15,5 @@ foreach(v OVS_P1 OVS_P2 OVS_P3 OVS_P4 OVS_GATE OVS_MASK)
   endif()
 endforeach()
 
-target_compile_options(ovs PRIVATE -O2 -fvisibility=hidden -fno-stack-protector)
-target_link_options(ovs PRIVATE -Wl,--gc-sections -Wl,--exclude-libs,ALL -Wl,-z,max-page-size=16384)
+target_compile_options(ovs PRIVATE -O2 -fvisibility=hidden -fno-stack-protector -fno-ident -ffunction-sections -fdata-sections)
+target_link_options(ovs PRIVATE -Wl,--gc-sections -Wl,--exclude-libs,ALL -Wl,-z,max-page-size=16384 -Wl,-z,relro -Wl,-z,now -Wl,--build-id=none -Wl,--strip-all)

@@ -1,4 +1,5 @@
 #include "ovs_core.h"
+#include "obf.h"
 
 #include <cstring>
 
@@ -60,14 +61,14 @@ bool derive_file_key(const Secrets& s, int gen, const uint8_t* salt, size_t salt
     for (size_t i = 0; i < part.size(); i++)
       key.push_back((uint8_t)((uint8_t)part[i] ^ kMix[i % 8] ^ (uint8_t)(p * 31)));
   }
-  std::string tail = "ovsea|v3|gen" + std::to_string(gen);
-  if (!env_tag.empty()) tail += "|env:" + env_tag;
+  std::string tail = OBF("ovsea|v3|gen") + std::to_string(gen);
+  if (!env_tag.empty()) tail += OBF("|env:") + env_tag;
   key.insert(key.end(), tail.begin(), tail.end());
 
   // acc = HMAC(key, salt || "ovsea-lock-v3"); then 4095 more rounds acc = HMAC(key, acc)
   std::vector<uint8_t> msg(salt, salt + salt_len);
-  const char* dom = "ovsea-lock-v3";
-  msg.insert(msg.end(), dom, dom + strlen(dom));
+  const std::string dom = OBF("ovsea-lock-v3");
+  msg.insert(msg.end(), dom.begin(), dom.end());
   uint8_t acc[32];
   hmac_sha256(key.data(), key.size(), msg.data(), msg.size(), acc);
   for (int i = 1; i < 4096; i++) {
@@ -86,8 +87,8 @@ bool gate_mac(const Secrets& s, const std::string& code, const std::string& fp, 
               const std::string& env_tag, std::string* hex_out) {
   if (!has_gate_key(s)) return false;
   std::string key = unmask(s.gate, s.mask_hex, 4);
-  if (!env_tag.empty()) key += "|env:" + env_tag;
-  std::string msg = "ovsea-gate-v2|" + code + "|" + fp + "|" + std::to_string(day);
+  if (!env_tag.empty()) key += OBF("|env:") + env_tag;
+  std::string msg = OBF("ovsea-gate-v2|") + code + OBF("|") + fp + OBF("|") + std::to_string(day);
   uint8_t mac[32];
   hmac_sha256((const uint8_t*)key.data(), key.size(), (const uint8_t*)msg.data(), msg.size(), mac);
   *hex_out = to_hex(mac, 32);
