@@ -4,10 +4,10 @@ import "package:flutter/material.dart";
 
 import "theme.dart";
 
-enum ConnectVisual { idle, connecting, connected, blocked }
+enum ConnectVisual { idle, connecting, connected, blocked, error }
 
-/// The big round power button. Idle: calm ring. Connecting: spinning arc.
-/// Connected: filled with a soft breathing halo. Blocked (kill switch): red.
+/// The big round power button (Harbor): two quiet rings and a round core. Connecting: a spinning
+/// arc. Connected: the core fills with the accent colour. Blocked: amber. Error: red.
 class ConnectButton extends StatefulWidget {
   final ConnectVisual visual;
   final VoidCallback? onPressed;
@@ -19,7 +19,7 @@ class ConnectButton extends StatefulWidget {
     required this.visual,
     required this.onPressed,
     required this.semanticsLabel,
-    this.size = 176,
+    this.size = 196,
   });
 
   @override
@@ -62,64 +62,60 @@ class _ConnectButtonState extends State<ConnectButton>
   Widget build(BuildContext context) {
     final c = context.colors;
     final v = widget.visual;
-    final color = switch (v) {
-      ConnectVisual.idle => c.muted,
-      ConnectVisual.connecting => c.warn,
-      ConnectVisual.connected => c.good,
-      ConnectVisual.blocked => c.bad,
+    final accent = switch (v) {
+      ConnectVisual.idle => c.brand,
+      ConnectVisual.connecting => c.brand,
+      ConnectVisual.connected => c.brand,
+      ConnectVisual.blocked => c.warn,
+      ConnectVisual.error => c.bad,
     };
-    final filled = v == ConnectVisual.connected || v == ConnectVisual.blocked;
+    final filled = v == ConnectVisual.connected;
     final size = widget.size;
+    final surface = Theme.of(context).colorScheme.surface;
+    final onAccent = Theme.of(context).colorScheme.onPrimary;
+    final enabled = widget.onPressed != null || v == ConnectVisual.connecting;
 
     return Semantics(
       button: true,
       label: widget.semanticsLabel,
-      child: GestureDetector(
-        onTap: widget.onPressed,
-        child: SizedBox(
-          width: size + 40,
-          height: size + 40,
-          child: AnimatedBuilder(
-            animation: _c,
-            builder: (_, __) => CustomPaint(
-              painter: _RingPainter(
-                t: _c.value,
-                visual: v,
-                color: color,
-                track: c.outline,
-              ),
-              child: Center(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 350),
-                  curve: Curves.easeOutCubic,
-                  width: size * 0.74,
-                  height: size * 0.74,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: filled
-                        ? LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [color, Color.lerp(color, c.brand, 0.55)!],
-                          )
-                        : null,
-                    color: filled ? null : c.surfaceHigh,
-                    border: Border.all(
-                        color: filled ? Colors.transparent : c.outline,
-                        width: 1.5),
-                    boxShadow: filled
-                        ? [
-                            BoxShadow(
-                                color: color.withValues(alpha: 0.35),
-                                blurRadius: 36,
-                                spreadRadius: 2)
-                          ]
-                        : const [],
-                  ),
-                  child: Icon(
-                    Icons.power_settings_new_rounded,
-                    size: size * 0.34,
-                    color: filled ? const Color(0xFF04201C) : color,
+      child: Opacity(
+        opacity: enabled ? 1 : 0.4,
+        child: GestureDetector(
+          onTap: widget.onPressed,
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: AnimatedBuilder(
+              animation: _c,
+              builder: (_, __) => CustomPaint(
+                painter: _RingPainter(
+                  t: _c.value,
+                  visual: v,
+                  color: accent,
+                  track: c.outline,
+                ),
+                child: Center(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 350),
+                    curve: Curves.easeOutCubic,
+                    width: size * 0.59,
+                    height: size * 0.59,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: filled ? accent : surface,
+                      boxShadow: [
+                        BoxShadow(
+                            color: (filled ? accent : Colors.black)
+                                .withValues(alpha: filled ? 0.38 : 0.12),
+                            blurRadius: filled ? 40 : 34,
+                            offset: const Offset(0, 14))
+                      ],
+                    ),
+                    child: Icon(
+                      Icons.power_settings_new_rounded,
+                      size: size * 0.22,
+                      color: filled ? onAccent : accent,
+                    ),
                   ),
                 ),
               ),
@@ -146,53 +142,36 @@ class _RingPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
-    final r = size.width / 2 - 6;
+    final r1 = size.width / 2 - 1;
+    final r2 = r1 - size.width * 0.102;
 
-    final base = Paint()
+    Paint ring(double w, Color col) => Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
-      ..color = track;
-    canvas.drawCircle(center, r, base);
+      ..strokeWidth = w
+      ..color = col;
 
-    switch (visual) {
-      case ConnectVisual.connecting:
-        final arc = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round
-          ..strokeWidth = 4
-          ..color = color;
-        canvas.drawArc(Rect.fromCircle(center: center, radius: r),
-            t * 2 * math.pi, math.pi * 0.55, false, arc);
-      case ConnectVisual.connected:
-        // Two slow expanding halos, offset in phase.
-        for (final phase in [0.0, 0.5]) {
-          final p = (t + phase) % 1.0;
-          canvas.drawCircle(
-            center,
-            r * (0.82 + 0.18 * p),
-            Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 2
-              ..color = color.withValues(alpha: (1 - p) * 0.45),
-          );
-        }
-        canvas.drawCircle(
-            center,
-            r,
-            Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 3
-              ..color = color.withValues(alpha: 0.7));
-      case ConnectVisual.blocked:
-        canvas.drawCircle(
-            center,
-            r,
-            Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 3
-              ..color = color.withValues(alpha: 0.8));
-      case ConnectVisual.idle:
-        break;
+    final ringColor = switch (visual) {
+      ConnectVisual.connected => color.withValues(alpha: 0.35),
+      ConnectVisual.blocked => color,
+      ConnectVisual.error => color.withValues(alpha: 0.5),
+      _ => track,
+    };
+    canvas.drawCircle(center, r1, ring(1.5, ringColor));
+    canvas.drawCircle(
+        center, r2, ring(1.5, Color.lerp(track, color, 0.22) ?? track));
+
+    if (visual == ConnectVisual.connecting) {
+      canvas.drawArc(
+          Rect.fromCircle(center: center, radius: r1),
+          t * 2 * math.pi,
+          math.pi * 0.62,
+          false,
+          ring(3, color)..strokeCap = StrokeCap.round);
+    } else if (visual == ConnectVisual.connected) {
+      // One slow halo leaving the outer ring.
+      final p = t % 1.0;
+      canvas.drawCircle(center, r1 * (0.9 + 0.1 * p),
+          ring(2, color.withValues(alpha: (1 - p) * 0.35)));
     }
   }
 

@@ -11,94 +11,96 @@ import "../../providers.dart";
 import "../../ui/connect_button.dart";
 import "../../ui/theme.dart";
 import "../../ui/widgets.dart";
+import "../add/add_sheet.dart";
 import "../ads/banner_ad.dart";
+import "../configs/config_actions.dart";
 import "../configs/connect_flow.dart";
-import "../configs/share_sheet.dart";
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final s = S.of(context);
     final configs = ref.watch(configsProvider);
     final list = configs.valueOrNull ?? const <VpnConfig>[];
 
     return Scaffold(
-      body: Stack(
-        children: [
-          const Positioned(top: 0, left: 0, right: 0, child: GlowBackdrop()),
-          SafeArea(
-            bottom: false,
-            child: Column(
-              children: [
-                const _Header(),
-                Expanded(
-                  child: configs.when(
-                    loading: () =>
-                        const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Center(child: Text("$e")),
-                    data: (_) => list.isEmpty
-                        ? EmptyState(
-                            icon: Icons.vpn_key_rounded,
-                            title: s.t("empty_title"),
-                            body: s.t("empty_hint"),
-                            actions: [
-                              FilledButton.icon(
-                                onPressed: () =>
-                                    ref.read(tabProvider.notifier).state = 1,
-                                icon: const Icon(Icons.add_rounded),
-                                label: Text(s.t("empty_cta_add")),
-                              ),
-                            ],
-                          )
-                        : _Body(list: list),
-                  ),
-                ),
-                const BannerAdBox(),
-              ],
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            const _Header(),
+            Expanded(
+              child: configs.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(child: Text("$e")),
+                data: (_) => _Body(list: list),
+              ),
             ),
-          ),
-        ],
+            const BannerAdBox(),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _Header extends StatelessWidget {
+class _Header extends ConsumerWidget {
   const _Header();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final s = S.of(context);
     final c = context.colors;
+    final phase =
+        ref.watch(tunnelStateProvider.select((v) => v.valueOrNull?.phase));
+    final info = phase == TunnelPhase.connected
+        ? ref.watch(exitInfoProvider).valueOrNull
+        : null;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
       child: Row(
         children: [
           Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(11),
-              gradient: LinearGradient(
-                  colors: [c.brand, Color.lerp(c.brand, Colors.blue, 0.4)!]),
-            ),
-            child: const Icon(Icons.shield_rounded,
-                size: 20, color: Color(0xFF04201C)),
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(color: c.brand, shape: BoxShape.circle),
+            child: Icon(Icons.waves_rounded,
+                size: 17, color: Theme.of(context).colorScheme.onPrimary),
           ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text("Oversea",
+          const SizedBox(width: 8),
+          const Text("Oversea",
+              style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -.2)),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(99),
+                  border: Border.all(
+                      color: info != null
+                          ? c.brand.withValues(alpha: .4)
+                          : c.outline),
+                ),
+                child: Text(
+                  info != null ? info.ip : s.t("not_protected"),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textDirection: TextDirection.ltr,
                   style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.2)),
-              Text(s.t("app_tagline"),
-                  style: TextStyle(fontSize: 12, color: c.muted)),
-            ],
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: info != null ? c.brand : c.muted,
+                      fontFeatures: const [FontFeature.tabularFigures()]),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -113,6 +115,7 @@ class _Body extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = S.of(context);
+    final c = context.colors;
     final ping = ref.watch(pingProvider);
     final selected = ref.watch(selectedConfigProvider);
 
@@ -126,28 +129,130 @@ class _Body extends ConsumerWidget {
     final sorted = [...list]..sort((a, b) => rank(a).compareTo(rank(b)));
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
       children: [
         _Hero(selected: selected),
-        const SizedBox(height: 20),
-        SectionTitle(
-          "${s.t("your_configs")} · ${list.length}",
-          trailing: TextButton.icon(
-            onPressed: () => testAllPings(ref, list),
-            icon: const Icon(Icons.speed_rounded, size: 18),
-            label: Text(s.t("test_speed")),
+        _Notice(selected: selected),
+        Padding(
+          padding: const EdgeInsets.only(top: 24, bottom: 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text.rich(TextSpan(children: [
+                  TextSpan(
+                      text: s.t("configs_header"),
+                      style: const TextStyle(
+                          fontSize: 16.5, fontWeight: FontWeight.w700)),
+                  if (list.isNotEmpty)
+                    TextSpan(
+                        text: "  ${list.length}",
+                        style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w500,
+                            color: c.muted)),
+                ])),
+              ),
+              if (list.isNotEmpty)
+                _LinkButton(
+                  icon: Icons.bolt_rounded,
+                  label: s.t("test_speed"),
+                  onTap: () => testAllPings(ref, list),
+                ),
+              const SizedBox(width: 6),
+              FilledButton.icon(
+                onPressed: () => showAddSheet(context, ref),
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 38),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    textStyle: const TextStyle(
+                        fontFamily: AppTheme.font,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600)),
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: Text(s.t("add_short")),
+              ),
+            ],
           ),
         ),
-        for (final c in sorted) ...[
-          ConfigCard(config: c, selected: selected?.id == c.id),
-          const SizedBox(height: 10),
-        ],
+        if (list.isEmpty)
+          _Empty(onAdd: () => showAddSheet(context, ref))
+        else
+          for (final cfg in sorted) ...[
+            ConfigCard(config: cfg, selected: selected?.id == cfg.id),
+            const SizedBox(height: 8),
+          ],
       ],
     );
   }
 }
 
-/// Big button, status, timer and live speed.
+class _LinkButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _LinkButton(
+      {required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 16, color: c.brand),
+          const SizedBox(width: 4),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w600, color: c.brand)),
+        ]),
+      ),
+    );
+  }
+}
+
+class _Empty extends StatelessWidget {
+  final VoidCallback onAdd;
+  const _Empty({required this.onAdd});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 26, 10, 10),
+      child: Column(
+        children: [
+          Container(
+            width: 84,
+            height: 84,
+            decoration:
+                BoxDecoration(color: c.brandSoft, shape: BoxShape.circle),
+            child: Icon(Icons.add_link_rounded, size: 38, color: c.brand),
+          ),
+          const SizedBox(height: 16),
+          Text(s.t("empty_title"),
+              style:
+                  const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          Text(s.t("empty_hint"),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: c.muted, height: 1.5, fontSize: 14)),
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add_rounded),
+            label: Text(s.t("empty_cta_add")),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Big orb, status, timer.
 class _Hero extends ConsumerWidget {
   final VpnConfig? selected;
   const _Hero({required this.selected});
@@ -181,6 +286,7 @@ class _Hero extends ConsumerWidget {
       TunnelPhase.connected => ConnectVisual.connected,
       TunnelPhase.connecting => ConnectVisual.connecting,
       TunnelPhase.blocked => ConnectVisual.blocked,
+      TunnelPhase.error => ConnectVisual.error,
       _ => ConnectVisual.idle,
     };
     final isConnected = st.phase == TunnelPhase.connected;
@@ -189,12 +295,12 @@ class _Hero extends ConsumerWidget {
         active != null &&
         active != selected!.id;
 
-    final (title, color) = switch (st.phase) {
-      TunnelPhase.connected => (s.t("status_connected"), c.good),
-      TunnelPhase.connecting => (s.t("status_connecting"), c.warn),
-      TunnelPhase.blocked => (s.t("status_blocked"), c.bad),
-      TunnelPhase.error => (s.t("status_error"), c.bad),
-      TunnelPhase.disconnected => (s.t("status_disconnected"), c.muted),
+    final title = switch (st.phase) {
+      TunnelPhase.connected => s.t("status_connected"),
+      TunnelPhase.connecting => s.t("status_connecting"),
+      TunnelPhase.blocked => s.t("status_blocked"),
+      TunnelPhase.error => s.t("status_error"),
+      TunnelPhase.disconnected => s.t("status_disconnected"),
     };
 
     final hint = switch (st.phase) {
@@ -205,14 +311,20 @@ class _Hero extends ConsumerWidget {
       _ => selected == null ? s.t("hero_add_first") : s.t("hero_tap_connect"),
     };
 
+    final expired = selected?.isExpired() ?? false;
+    final canTap = selected != null &&
+        st.phase != TunnelPhase.connecting &&
+        !(expired && !isConnected);
+
     return Column(
       children: [
+        const SizedBox(height: 18),
         ConnectButton(
           visual: visual,
           semanticsLabel: hint.isEmpty ? title : "$title. $hint",
           onPressed: selected == null
-              ? () => ref.read(tabProvider.notifier).state = 1
-              : st.phase == TunnelPhase.connecting
+              ? null
+              : !canTap
                   ? null
                   : () {
                       if (st.phase == TunnelPhase.blocked ||
@@ -223,13 +335,15 @@ class _Hero extends ConsumerWidget {
                       }
                     },
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 14),
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 250),
           child: Text(title,
               key: ValueKey(st.phase),
-              style: TextStyle(
-                  fontSize: 26, fontWeight: FontWeight.w800, color: color)),
+              style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -.3)),
         ),
         const SizedBox(height: 4),
         if (isConnected && since != null)
@@ -239,24 +353,24 @@ class _Hero extends ConsumerWidget {
               textAlign: TextAlign.center,
               style: TextStyle(color: c.muted, fontSize: 14)),
         if (isConnected) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           const _ExitIp(),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(
-                  child: _Stat(
-                      icon: Icons.arrow_upward_rounded,
-                      label: s.t("uploaded"),
-                      rate: rate(st.upRate),
-                      total: total(st.up))),
-              const SizedBox(width: 10),
               Expanded(
                   child: _Stat(
                       icon: Icons.arrow_downward_rounded,
                       label: s.t("downloaded"),
                       rate: rate(st.downRate),
                       total: total(st.down))),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: _Stat(
+                      icon: Icons.arrow_upward_rounded,
+                      label: s.t("uploaded"),
+                      rate: rate(st.upRate),
+                      total: total(st.up))),
             ],
           ),
           if (switching) ...[
@@ -265,6 +379,149 @@ class _Hero extends ConsumerWidget {
           ],
         ],
       ],
+    );
+  }
+}
+
+/// Status cards under the orb: blocked, error, expired, not encrypted.
+class _Notice extends ConsumerWidget {
+  final VpnConfig? selected;
+  const _Notice({required this.selected});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = S.of(context);
+    final c = context.colors;
+    final st = ref.watch(tunnelStateProvider).valueOrNull ?? TunnelState.idle;
+    final svc = ref.read(tunnelServiceProvider);
+    final cfg = selected;
+
+    if (st.phase == TunnelPhase.blocked) {
+      return _NoticeCard(
+        color: c.warn,
+        icon: Icons.info_outline_rounded,
+        title: s.t("notice_blocked_t"),
+        body: s.t("notice_blocked_d"),
+        actions: [
+          FilledButton(
+              onPressed: cfg == null
+                  ? null
+                  : () => toggleConnection(context, ref, cfg),
+              style: _small,
+              child: Text(s.t("reconnect"))),
+          OutlinedButton(
+              onPressed: svc.stop,
+              style: _smallOutline(c),
+              child: Text(s.t("disconnect"))),
+        ],
+      );
+    }
+    if (st.phase == TunnelPhase.error) {
+      return _NoticeCard(
+        color: c.bad,
+        icon: Icons.warning_amber_rounded,
+        title: s.t("notice_error_t"),
+        body: (st.message ?? "").isEmpty ? s.t("connect_failed") : st.message!,
+        actions: [
+          FilledButton(
+              onPressed: cfg == null
+                  ? null
+                  : () => toggleConnection(context, ref, cfg),
+              style: _small,
+              child: Text(s.t("try_again"))),
+        ],
+      );
+    }
+    if (cfg != null &&
+        cfg.isExpired() &&
+        st.phase == TunnelPhase.disconnected) {
+      return _NoticeCard(
+        color: c.bad,
+        icon: Icons.warning_amber_rounded,
+        title: s.t("notice_expired_t"),
+        body: s.t("file_expired"),
+      );
+    }
+    if (cfg != null && XrayConfigBuilder.isUnencrypted(cfg.raw)) {
+      return _NoticeCard(
+        color: c.warn,
+        icon: Icons.lock_open_rounded,
+        title: s.t("notice_noenc_t"),
+        body: s.t("notice_noenc_d"),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  static final ButtonStyle _small = FilledButton.styleFrom(
+      minimumSize: const Size(0, 38),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      textStyle: const TextStyle(
+          fontFamily: AppTheme.font,
+          fontSize: 13,
+          fontWeight: FontWeight.w600));
+
+  static ButtonStyle _smallOutline(AppColors c) => OutlinedButton.styleFrom(
+      minimumSize: const Size(0, 38),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      side: BorderSide(color: c.outline),
+      textStyle: const TextStyle(
+          fontFamily: AppTheme.font,
+          fontSize: 13,
+          fontWeight: FontWeight.w600));
+}
+
+class _NoticeCard extends StatelessWidget {
+  final Color color;
+  final IconData icon;
+  final String title;
+  final String body;
+  final List<Widget> actions;
+  const _NoticeCard({
+    required this.color,
+    required this.icon,
+    required this.title,
+    required this.body,
+    this.actions = const [],
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final surface = Theme.of(context).colorScheme.surface;
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(color.withValues(alpha: .10), surface),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withValues(alpha: .30)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 14.5)),
+                const SizedBox(height: 3),
+                Text(body,
+                    style:
+                        TextStyle(color: c.muted, fontSize: 13, height: 1.45)),
+                if (actions.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Wrap(spacing: 8, runSpacing: 8, children: actions),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -337,7 +594,7 @@ class _TimerState extends State<_Timer> {
         "${two(d.inHours)}:${two(d.inMinutes % 60)}:${two(d.inSeconds % 60)}";
     return Text(text,
         style: TextStyle(
-            fontSize: 16,
+            fontSize: 14,
             fontWeight: FontWeight.w500,
             color: context.colors.muted,
             fontFeatures: const [FontFeature.tabularFigures()]));
@@ -360,26 +617,24 @@ class _Stat extends StatelessWidget {
     final c = context.colors;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Row(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            IconTile(icon, size: 36, color: c.brand),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(rate,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 15)),
-                  Semantics(
-                      label: label,
-                      child: Text(total,
-                          style: TextStyle(color: c.muted, fontSize: 12),
-                          maxLines: 1)),
-                ],
-              ),
-            ),
+            Row(children: [
+              Icon(icon, size: 15, color: c.muted),
+              const SizedBox(width: 6),
+              Text(label, style: TextStyle(fontSize: 12, color: c.muted)),
+            ]),
+            const SizedBox(height: 6),
+            Text(rate,
+                maxLines: 1,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    fontFeatures: [FontFeature.tabularFigures()])),
+            Text(total,
+                maxLines: 1, style: TextStyle(color: c.muted, fontSize: 12)),
           ],
         ),
       ),
@@ -387,6 +642,7 @@ class _Stat extends StatelessWidget {
   }
 }
 
+/// One config row: tile, name, badges, ping, menu.
 class ConfigCard extends ConsumerWidget {
   final VpnConfig config;
   final bool selected;
@@ -399,132 +655,90 @@ class ConfigCard extends ConsumerWidget {
     final cfg = config;
     final ms = ref.watch(pingProvider)[cfg.id];
     final st = ref.watch(tunnelStateProvider).valueOrNull ?? TunnelState.idle;
+    final trusted = ref.watch(trustedCreatorsProvider).valueOrNull ?? const {};
     final isActive = ref.watch(activeConfigIdProvider) == cfg.id &&
         (st.phase == TunnelPhase.connected ||
             st.phase == TunnelPhase.connecting);
     final expired = cfg.isExpired();
+    final subtitle = cfg.locked
+        ? "${cfg.protocol.label}  ·  ${cfg.creator == null ? "—" : "by ${cfg.creator!}"}"
+        : "${cfg.protocol.label}  ·  ${cfg.host ?? "—"}${cfg.port == null ? "" : ":${cfg.port}"}";
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(
-          color: isActive ? c.good : (selected ? c.brand : c.outline),
-          width: selected || isActive ? 1.6 : 1,
+    return Opacity(
+      opacity: expired ? .75 : 1,
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(
+            color: isActive ? c.good : (selected ? c.brand : c.outline),
+            width: selected || isActive ? 1.5 : 1,
+          ),
         ),
-      ),
-      child: InkWell(
-        onTap: () => ref.read(selectedConfigIdProvider.notifier).select(cfg.id),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
-          child: Row(
-            children: [
-              IconTile(cfg.locked ? Icons.lock_rounded : Icons.public_rounded,
-                  color: expired ? c.bad : (isActive ? c.good : c.brand)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(cfg.name.isNotEmpty ? cfg.name : (cfg.host ?? "—"),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w700, fontSize: 15.5)),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        Pill(cfg.protocol.label),
-                        // Locked configs never reveal their server address.
-                        if (cfg.locked)
-                          Pill(s.t("locked"),
-                              icon: Icons.lock_rounded, color: c.brand),
-                        if (cfg.gated)
-                          Pill("Gate",
-                              icon: Icons.shield_moon_rounded, color: c.brand),
-                        if (XrayConfigBuilder.isUnencrypted(cfg.raw))
-                          Pill(s.t("no_tls"),
-                              icon: Icons.lock_open_rounded, color: c.warn),
-                        if (expired) Pill(s.t("expired"), color: c.bad),
-                        if (!cfg.locked && cfg.host != null) Pill(cfg.host!),
-                      ],
-                    ),
-                  ],
+        child: InkWell(
+          onTap: () =>
+              ref.read(selectedConfigIdProvider.notifier).select(cfg.id),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 4, 12),
+            child: Row(
+              children: [
+                IconTile(cfg.locked ? Icons.lock_rounded : Icons.dns_rounded,
+                    size: 42,
+                    color: expired ? c.bad : (isActive ? c.good : c.brand)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(cfg.name.isNotEmpty ? cfg.name : (cfg.host ?? "—"),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 15)),
+                      const SizedBox(height: 2),
+                      Text(subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textDirection: TextDirection.ltr,
+                          style: TextStyle(color: c.muted, fontSize: 12.5)),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 5,
+                        runSpacing: 4,
+                        children: [
+                          if (cfg.locked)
+                            Pill(s.t("locked"),
+                                icon: Icons.lock_rounded, color: c.brand),
+                          if (cfg.gated)
+                            Pill("Gate",
+                                icon: Icons.shield_moon_rounded,
+                                color: c.brand),
+                          if (XrayConfigBuilder.isUnencrypted(cfg.raw))
+                            Pill(s.t("no_tls"),
+                                icon: Icons.lock_open_rounded, color: c.warn),
+                          if (expired) Pill(s.t("expired"), color: c.bad),
+                          if (cfg.locked && cfg.creator != null)
+                            trusted.contains(cfg.creator)
+                                ? Pill(s.t("badge_verified"), color: c.good)
+                                : Pill(s.t("badge_unverified"), color: c.warn),
+                          if (cfg.locked && cfg.creator == null)
+                            Pill(s.t("badge_unsigned"), color: c.bad),
+                          if (cfg.source.startsWith("Subscription"))
+                            Pill(cfg.source.replaceFirst("Subscription: ", ""),
+                                icon: Icons.sync_rounded),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              if (ms != null)
-                Padding(
-                  padding: const EdgeInsets.only(right: 2),
-                  child: ms == -2
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : Text(
-                          ms < 0 ? s.t("failed") : "$ms ${s.t("ms")}",
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12.5,
-                            color:
-                                ms < 0 ? c.bad : (ms < 400 ? c.good : c.warn),
-                          ),
-                        ),
+                _PingLabel(ms: ms, onTap: () => testPing(ref, cfg)),
+                IconButton(
+                  icon: Icon(Icons.more_horiz_rounded, color: c.muted),
+                  tooltip: "More",
+                  onPressed: () => showConfigActions(context, ref, cfg),
                 ),
-              PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert_rounded, color: c.muted),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-                onSelected: (v) async {
-                  switch (v) {
-                    case "test":
-                      testPing(ref, cfg);
-                    case "share":
-                      showShareSheet(context, cfg);
-                    case "remove":
-                      final ok = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: Text(s.t("remove_title")),
-                          content: Text(s.t("remove_body")),
-                          actions: [
-                            TextButton(
-                                onPressed: () => Navigator.pop(ctx, false),
-                                child: Text(s.t("cancel"))),
-                            FilledButton(
-                              style: FilledButton.styleFrom(
-                                  minimumSize: const Size(96, 44),
-                                  backgroundColor: c.bad),
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: Text(s.t("remove")),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (ok == true) {
-                        ref.read(configsProvider.notifier).remove(cfg.id);
-                      }
-                  }
-                },
-                itemBuilder: (_) => [
-                  PopupMenuItem(
-                      value: "test",
-                      child: _MenuRow(Icons.speed_rounded, s.t("test_speed"))),
-                  // Locked configs cannot be re-shared: that would allow re-locking
-                  // them under someone else's name.
-                  if (!cfg.locked)
-                    PopupMenuItem(
-                        value: "share",
-                        child: _MenuRow(Icons.ios_share_rounded, s.t("share"))),
-                  PopupMenuItem(
-                      value: "remove",
-                      child: _MenuRow(
-                          Icons.delete_outline_rounded, s.t("remove"),
-                          color: c.bad)),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -532,18 +746,41 @@ class ConfigCard extends ConsumerWidget {
   }
 }
 
-class _MenuRow extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  final Color? color;
-  const _MenuRow(this.icon, this.text, {this.color});
+class _PingLabel extends StatelessWidget {
+  final int? ms;
+  final VoidCallback onTap;
+  const _PingLabel({required this.ms, required this.onTap});
 
   @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          Icon(icon, size: 20, color: color),
-          const SizedBox(width: 12),
-          Text(text, style: TextStyle(color: color)),
-        ],
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final c = context.colors;
+    if (ms == null) return const SizedBox(width: 4);
+    if (ms == -2) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 6),
+        child: SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2)),
       );
+    }
+    final v = ms!;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        child: Text(
+          v < 0 ? s.t("failed") : "$v ${s.t("ms")}",
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 12.5,
+            color: v < 0 ? c.bad : (v < 400 ? c.good : c.warn),
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      ),
+    );
+  }
 }

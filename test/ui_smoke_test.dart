@@ -15,8 +15,11 @@ import "package:oversea/data/config_store.dart";
 import "package:oversea/data/exit_ip.dart";
 import "package:oversea/data/identity_store.dart";
 import "package:oversea/data/tunnel_service.dart";
+import "package:oversea/domain/subscription.dart";
 import "package:oversea/domain/vpn_config.dart";
 import "package:oversea/features/configs/gate_line_card.dart";
+import "package:oversea/features/editor/config_editor_screen.dart";
+import "package:oversea/features/subscriptions/subscriptions_screen.dart";
 import "package:oversea/features/configs/share_sheet.dart";
 import "package:oversea/features/settings/gate_allowlist_screen.dart";
 import "package:oversea/providers.dart";
@@ -37,6 +40,13 @@ class _FakeConfigs extends ConfigsNotifier {
   _FakeConfigs(this.items);
   @override
   Future<List<VpnConfig>> build() async => items;
+}
+
+class _FakeSubs extends SubscriptionsNotifier {
+  final List<Subscription> items;
+  _FakeSubs(this.items);
+  @override
+  Future<List<Subscription>> build() async => items;
 }
 
 class _FakeSince extends ConnectedSinceNotifier {
@@ -72,26 +82,33 @@ final _samples = [
 ];
 
 Future<void> _loadFonts() async {
-  const dir = "/tmp/flutter-sdk/bin/cache/artifacts/material_fonts";
-  Future<void> load(String family, List<String> files) async {
+  final root = Platform.environment["FLUTTER_ROOT"] ?? "/tmp/flutter-sdk";
+  final dir = "$root/bin/cache/artifacts/material_fonts";
+  Future<void> load(String family, List<String> paths) async {
     final l = FontLoader(family);
-    for (final f in files) {
-      final b = File("$dir/$f").readAsBytesSync();
+    for (final f in paths) {
+      final b = File(f).readAsBytesSync();
       l.addFont(Future.value(ByteData.view(b.buffer)));
     }
     await l.load();
   }
 
+  // The app's own font (bundled in assets/fonts).
+  await load("Sora", [
+    "assets/fonts/Sora-400.ttf",
+    "assets/fonts/Sora-600.ttf",
+    "assets/fonts/Sora-700.ttf",
+  ]);
   if (!Directory(dir).existsSync()) {
-    return; // other machines: fall back to the test font
+    return; // other machines: icons fall back to the test font
   }
   await load("Roboto", [
-    "Roboto-Regular.ttf",
-    "Roboto-Medium.ttf",
-    "Roboto-Bold.ttf",
-    "Roboto-Black.ttf"
+    "$dir/Roboto-Regular.ttf",
+    "$dir/Roboto-Medium.ttf",
+    "$dir/Roboto-Bold.ttf",
+    "$dir/Roboto-Black.ttf"
   ]);
-  await load("MaterialIcons", ["MaterialIcons-Regular.otf"]);
+  await load("MaterialIcons", ["$dir/MaterialIcons-Regular.otf"]);
 }
 
 final _key = GlobalKey();
@@ -118,6 +135,7 @@ Future<void> _show(
   Map<String, int> ping = const {},
   bool connectedTimer = false,
   String? selected,
+  List<Subscription> subs = const [],
   Future<void> Function(WidgetTester)? then,
 }) async {
   t.view.physicalSize = const Size(900, 1950);
@@ -128,6 +146,7 @@ Future<void> _show(
 
   final container = ProviderContainer(overrides: [
     configsProvider.overrideWith(() => _FakeConfigs(configs)),
+    subscriptionsProvider.overrideWith(() => _FakeSubs(subs)),
     tunnelStateProvider.overrideWith((ref) => Stream.value(tunnel)),
     identityStoreProvider.overrideWithValue(IdentityStore(vault: _MemVault())),
     onboardedProvider.overrideWith((ref) async => onboarded),
@@ -193,7 +212,7 @@ void main() {
     );
     expect(find.text("Connected"), findsWidgets);
     expect(find.textContaining("00:12:3"), findsOneWidget);
-    expect(find.textContaining("203.0.113.7"), findsOneWidget);
+    expect(find.textContaining("203.0.113.7"), findsWidgets);
   });
 
   testWidgets("home — connecting (light)", (t) async {
@@ -224,18 +243,129 @@ void main() {
         selected: "2");
   });
 
-  testWidgets("add", (t) async {
-    await _show(t, shot: "add_dark", tab: 1);
+  testWidgets("add sheet", (t) async {
+    await _show(t, shot: "add_sheet_dark", configs: _samples, selected: "1",
+        then: (t) async {
+      await t.tap(find.widgetWithText(FilledButton, "Add"));
+      for (var i = 0; i < 8; i++) {
+        await t.pump(const Duration(milliseconds: 150));
+      }
+    });
     expect(find.text("Paste from clipboard"), findsOneWidget);
+    expect(find.text("Scan a QR code"), findsOneWidget);
+    expect(find.text("Create manually"), findsOneWidget);
+    expect(find.text("Add a subscription"), findsOneWidget);
+  });
+
+  testWidgets("empty home has an Add button", (t) async {
+    await _show(t, shot: "home_empty_light", mode: ThemeMode.light);
+    expect(find.text("Add a config"), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, "Add"), findsOneWidget);
+  });
+
+  testWidgets("config actions sheet", (t) async {
+    await _show(t,
+        shot: "config_actions_dark",
+        configs: _samples,
+        selected: "1", then: (t) async {
+      await t.tap(find.byIcon(Icons.more_horiz_rounded).first);
+      for (var i = 0; i < 8; i++) {
+        await t.pump(const Duration(milliseconds: 150));
+      }
+    });
+    expect(find.text("Edit"), findsOneWidget);
+    expect(find.text("Delete"), findsOneWidget);
+  });
+
+  Future<void> pushScreen(WidgetTester t, Widget w) async {
+    final ctx = t.element(find.byType(Scaffold).first);
+    Navigator.of(ctx).push(MaterialPageRoute<void>(builder: (_) => w));
+    for (var i = 0; i < 8; i++) {
+      await t.pump(const Duration(milliseconds: 150));
+    }
+  }
+
+  const fullLink =
+      "vless://11111111-2222-3333-4444-555555555555@fra.example.com:443?encryption=none&security=tls&sni=fra.example.com&type=ws&path=%2Fws&host=cdn.example.com#Frankfurt";
+
+  testWidgets("config editor — new", (t) async {
+    await _show(t, shot: "editor_new_dark", configs: _samples, then: (t) async {
+      await pushScreen(t, const ConfigEditorScreen());
+    });
+    expect(find.text("New config"), findsOneWidget);
+    expect(find.text("Add config"), findsOneWidget);
+  });
+
+  testWidgets("config editor — new, light, shows errors", (t) async {
+    await _show(t,
+        shot: "editor_errors_light",
+        mode: ThemeMode.light,
+        configs: _samples, then: (t) async {
+      await pushScreen(t, const ConfigEditorScreen());
+      await t.ensureVisible(find.text("Add config"));
+      await t.tap(find.text("Add config"));
+      await t.pump(const Duration(milliseconds: 300));
+    });
+    expect(find.text("Enter the server address"), findsOneWidget);
+  });
+
+  testWidgets("config editor — edit", (t) async {
+    const c = VpnConfig(
+        id: "e1",
+        name: "Frankfurt",
+        protocol: VpnProtocol.vless,
+        host: "fra.example.com",
+        port: 443,
+        raw: fullLink,
+        source: "manual");
+    await _show(t, shot: "editor_edit_dark", configs: [c], then: (t) async {
+      await pushScreen(t, const ConfigEditorScreen(existing: c));
+    });
+    expect(find.text("Edit config"), findsOneWidget);
+    expect(find.text("Save changes"), findsOneWidget);
+    expect(find.text("fra.example.com"), findsWidgets);
+  });
+
+  testWidgets("subscriptions — empty", (t) async {
+    await _show(t, shot: "subs_empty_dark", configs: _samples, then: (t) async {
+      await pushScreen(t, const SubscriptionsScreen());
+    });
+    expect(find.text("No subscriptions"), findsOneWidget);
+  });
+
+  testWidgets("subscriptions — list", (t) async {
+    final subs = [
+      Subscription(
+          id: "s1",
+          name: "Vipnet daily",
+          url: "https://example.com/sub?token=abc",
+          updatedAt:
+              DateTime.now().toUtc().subtract(const Duration(minutes: 12)),
+          count: 24),
+      const Subscription(
+          id: "s2",
+          name: "Backup list",
+          url: "https://backup.example.org/s",
+          count: 6,
+          error: "The server took too long"),
+    ];
+    await _show(t, shot: "subs_list_dark", configs: _samples, subs: subs,
+        then: (t) async {
+      await pushScreen(t, const SubscriptionsScreen());
+    });
+    expect(find.text("Vipnet daily"), findsOneWidget);
+    expect(find.text("The server took too long"), findsOneWidget);
+    expect(find.textContaining("example.com/sub"), findsNothing,
+        reason: "the subscription URL (it may hold a token) must not be shown");
   });
 
   testWidgets("settings", (t) async {
-    await _show(t, shot: "settings_dark", tab: 2);
+    await _show(t, shot: "settings_dark", tab: 1);
     expect(find.text("Kill switch"), findsOneWidget);
   });
 
   testWidgets("settings (light)", (t) async {
-    await _show(t, shot: "settings_light", tab: 2, mode: ThemeMode.light);
+    await _show(t, shot: "settings_light", tab: 1, mode: ThemeMode.light);
   });
 
   testWidgets("onboarding", (t) async {

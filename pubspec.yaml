@@ -41,6 +41,7 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   # Pick a locked .ovsea file to import.
   file_picker: ^8.1.2
+  mobile_scanner: ^7.4.2
 
 dev_dependencies:
   flutter_test:
@@ -51,3 +52,12 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  fonts:
+    - family: Sora
+      fonts:
+        - asset: assets/fonts/Sora-400.ttf
+          weight: 400
+        - asset: assets/fonts/Sora-600.ttf
+          weight: 600
+        - asset: assets/fonts/Sora-700.ttf
+          weight: 700

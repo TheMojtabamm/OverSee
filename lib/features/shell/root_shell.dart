@@ -5,7 +5,6 @@ import "../../core/strings.dart";
 import "../../data/incoming_service.dart";
 import "../../providers.dart";
 import "../../ui/theme.dart";
-import "../add/add_screen.dart";
 import "../add/importer.dart";
 import "../configs/connect_flow.dart";
 import "../home/home_screen.dart";
@@ -94,7 +93,7 @@ class _RootShellState extends ConsumerState<RootShell>
     return Scaffold(
       body: IndexedStack(
         index: tab,
-        children: const [HomeScreen(), AddScreen(), SettingsScreen()],
+        children: const [HomeScreen(), SettingsScreen()],
       ),
       bottomNavigationBar: DecoratedBox(
         decoration: BoxDecoration(
@@ -105,13 +104,9 @@ class _RootShellState extends ConsumerState<RootShell>
               ref.read(tabProvider.notifier).state = i,
           destinations: [
             NavigationDestination(
-                icon: const Icon(Icons.shield_outlined),
-                selectedIcon: const Icon(Icons.shield_rounded),
+                icon: const Icon(Icons.home_outlined),
+                selectedIcon: const Icon(Icons.home_rounded),
                 label: s.t("tab_home")),
-            NavigationDestination(
-                icon: const Icon(Icons.add_circle_outline_rounded),
-                selectedIcon: const Icon(Icons.add_circle_rounded),
-                label: s.t("tab_add")),
             NavigationDestination(
                 icon: const Icon(Icons.tune_rounded),
                 selectedIcon: const Icon(Icons.tune_rounded),
