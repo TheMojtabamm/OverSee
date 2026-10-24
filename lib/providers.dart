@@ -5,7 +5,10 @@ import "data/config_store.dart";
 import "data/exit_ip.dart";
 import "data/identity_store.dart";
 import "data/settings_store.dart";
+import "data/subscription_service.dart";
+import "data/subscription_store.dart";
 import "data/tunnel_service.dart";
+import "domain/subscription.dart";
 import "domain/tunnel_settings.dart";
 import "domain/vpn_config.dart";
 import "domain/xray_config_builder.dart";
@@ -26,6 +29,16 @@ class ConfigsNotifier extends AsyncNotifier<List<VpnConfig>> {
 
   Future<void> remove(String id) async {
     state = AsyncData(await _store.remove(id));
+  }
+
+  Future<void> saveEdited(VpnConfig edited) async {
+    state = AsyncData(await _store.update(edited));
+  }
+
+  /// Swaps the whole list (a subscription refresh).
+  Future<void> replaceAll(List<VpnConfig> configs) async {
+    await _store.saveAll(configs);
+    state = AsyncData(configs);
   }
 
   Future<void> reload() async {
@@ -206,3 +219,131 @@ class PingNotifier extends Notifier<Map<String, int>> {
 
 final pingProvider =
     NotifierProvider<PingNotifier, Map<String, int>>(PingNotifier.new);
+
+// ---- subscriptions ---------------------------------------------------------
+
+final subscriptionStoreProvider =
+    Provider<SubscriptionStore>((ref) => SubscriptionStore());
+final subscriptionServiceProvider =
+    Provider<SubscriptionService>((ref) => SubscriptionService());
+
+/// What a subscription add / refresh did, for the UI to report.
+class SubOutcome {
+  final int count;
+  final String? error;
+  const SubOutcome.ok(this.count) : error = null;
+  const SubOutcome.fail(this.error) : count = 0;
+  bool get ok => error == null;
+}
+
+class SubscriptionsNotifier extends AsyncNotifier<List<Subscription>> {
+  SubscriptionStore get _store => ref.read(subscriptionStoreProvider);
+
+  @override
+  Future<List<Subscription>> build() => _store.load();
+
+  List<Subscription> get _now => state.valueOrNull ?? const [];
+
+  Future<void> _save(List<Subscription> subs) async {
+    await _store.save(subs);
+    state = AsyncData(subs);
+  }
+
+  Future<SubOutcome> add(String url, {String? name}) async {
+    final u = url.trim();
+    if (!Subscription.isValidUrl(u)) {
+      return const SubOutcome.fail("Enter a full link starting with https://");
+    }
+    if (_now.any((s) => s.url == u)) {
+      return const SubOutcome.fail("This subscription is already added");
+    }
+    final sub = Subscription(
+      id: "sub_${DateTime.now().millisecondsSinceEpoch}",
+      name: (name ?? "").trim().isEmpty
+          ? Subscription.nameFromUrl(u)
+          : name!.trim(),
+      url: u,
+    );
+    final out = await _fetchInto(sub);
+    if (out.ok) {
+      // _fetchInto saved the configs; keep the subscription itself only if it worked.
+    }
+    return out;
+  }
+
+  Future<SubOutcome> refresh(String id) async {
+    final sub = _now.where((s) => s.id == id).firstOrNull;
+    if (sub == null) return const SubOutcome.fail("Subscription not found");
+    return _fetchInto(sub);
+  }
+
+  /// Refreshes every subscription; returns how many succeeded.
+  Future<int> refreshAll() async {
+    var ok = 0;
+    for (final s in [..._now]) {
+      if ((await _fetchInto(s)).ok) ok++;
+    }
+    return ok;
+  }
+
+  Future<SubOutcome> _fetchInto(Subscription sub) async {
+    final isNew = !_now.any((s) => s.id == sub.id);
+    try {
+      final body =
+          await ref.read(subscriptionServiceProvider).fetch(Uri.parse(sub.url));
+      final fetched =
+          Subscription.parseBody(body, subId: sub.id, subName: sub.name);
+      if (fetched.isEmpty) {
+        throw const SubscriptionFetchException(
+            "No supported configs found in that list");
+      }
+      final current = ref.read(configsProvider).valueOrNull ?? const [];
+      final merged =
+          Subscription.merge(current: current, subId: sub.id, fetched: fetched);
+      await ref.read(configsProvider.notifier).replaceAll(merged);
+      final count = merged.where((c) => c.channelRef == sub.id).length;
+      final done = sub.copyWith(
+          updatedAt: DateTime.now().toUtc(), count: count, clearError: true);
+      await _save(isNew
+          ? [..._now, done]
+          : [for (final s in _now) s.id == sub.id ? done : s]);
+      return SubOutcome.ok(count);
+    } on SubscriptionFetchException catch (e) {
+      if (!isNew) {
+        await _save([
+          for (final s in _now)
+            s.id == sub.id ? s.copyWith(error: e.message) : s
+        ]);
+      }
+      return SubOutcome.fail(e.message);
+    } catch (_) {
+      if (!isNew) {
+        await _save([
+          for (final s in _now)
+            s.id == sub.id ? s.copyWith(error: "Could not read the list") : s
+        ]);
+      }
+      return const SubOutcome.fail("Could not read the list");
+    }
+  }
+
+  Future<void> rename(String id, String name) => _save([
+        for (final s in _now)
+          s.id == id
+              ? s.copyWith(name: name.trim().isEmpty ? s.name : name.trim())
+              : s
+      ]);
+
+  /// Deletes the subscription and every config that came from it.
+  Future<void> remove(String id) async {
+    final current = ref.read(configsProvider).valueOrNull ?? const [];
+    await ref
+        .read(configsProvider.notifier)
+        .replaceAll(current.where((c) => c.channelRef != id).toList());
+    await _save(_now.where((s) => s.id != id).toList());
+  }
+}
+
+final subscriptionsProvider =
+    AsyncNotifierProvider<SubscriptionsNotifier, List<Subscription>>(
+        SubscriptionsNotifier.new);

@@ -161,6 +161,7 @@ class VpnConfig {
     String? gateCode,
     DateTime? expiresAt,
     bool clearHost = false,
+    bool clearChannelRef = false,
   }) =>
       VpnConfig(
         id: id ?? this.id,
@@ -170,7 +171,7 @@ class VpnConfig {
         port: clearHost ? null : (port ?? this.port),
         raw: raw ?? this.raw,
         source: source ?? this.source,
-        channelRef: channelRef ?? this.channelRef,
+        channelRef: clearChannelRef ? null : (channelRef ?? this.channelRef),
         adText: adText ?? this.adText,
         telegramUrl: telegramUrl ?? this.telegramUrl,
         locked: locked ?? this.locked,

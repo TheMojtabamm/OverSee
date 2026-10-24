@@ -78,6 +78,15 @@ class ConfigStore {
     return merged;
   }
 
+  /// Replaces the config with the same id (an edit). No-op when it is gone.
+  Future<List<VpnConfig>> update(VpnConfig edited) async {
+    final current = await load();
+    final i = current.indexWhere((c) => c.id == edited.id);
+    if (i >= 0) current[i] = edited;
+    await saveAll(current);
+    return current;
+  }
+
   Future<List<VpnConfig>> remove(String id) async {
     final current = await load();
     current.removeWhere((c) => c.id == id);
