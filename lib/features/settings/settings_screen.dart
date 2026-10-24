@@ -11,6 +11,7 @@ import "../../providers.dart";
 import "../../ui/theme.dart";
 import "../../ui/widgets.dart";
 import "app_picker_screen.dart";
+import "diagnostics_screen.dart";
 import "gate_allowlist_screen.dart";
 
 class SettingsScreen extends ConsumerWidget {
@@ -221,6 +222,16 @@ class SettingsScreen extends ConsumerWidget {
                 values: ThemeMode.values,
                 label: themeLabel,
                 onChanged: (v) => ref.read(themeModeProvider.notifier).set(v),
+              ),
+              SettingsRow(
+                icon: Icons.troubleshoot_rounded,
+                title: "Diagnostics",
+                subtitle: "Test the selected server from this phone",
+                trailing: Icon(Icons.chevron_right_rounded, color: c.muted),
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                        builder: (_) => const DiagnosticsScreen())),
               ),
               SettingsRow(
                   icon: Icons.info_outline_rounded,
