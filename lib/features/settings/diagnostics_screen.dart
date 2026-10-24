@@ -6,6 +6,8 @@ import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
+import "../../domain/gate_token.dart";
+import "../../domain/locked_config_codec.dart";
 import "../../domain/vpn_config.dart";
 import "../../providers.dart";
 import "../../ui/theme.dart";
@@ -43,6 +45,14 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
       _log.clear();
     });
     final locked = c.locked;
+    if (locked || c.gateCode != null) {
+      _add(
+          LockedConfigCodec.environmentTag.isEmpty,
+          LockedConfigCodec.environmentTag.isEmpty
+              ? "Integrity check passed."
+              : "Integrity check FAILED: the app sees a modified environment (debugger, hooking framework such as Frida/Xposed, or a re-signed APK). "
+                  "Gate tokens come out wrong in this state, so the server refuses every connection. Install the official APK and turn such tools off.");
+    }
     final host = c.host;
     final port = c.port;
     if (host == null || port == null) {
@@ -55,7 +65,7 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
             timeout: const Duration(seconds: 8));
         _add(true,
             "TCP connection to $where works (${sw.elapsedMilliseconds} ms)");
-        if (!locked) await _wsProbe(c, s);
+        await _wsProbe(c, s);
         s.destroy();
       } on Object catch (e) {
         _add(false,
@@ -70,10 +80,22 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
   Future<void> _wsProbe(VpnConfig c, Socket s) async {
     final u = Uri.tryParse(c.raw);
     final q = u?.queryParameters ?? const {};
-    if ((q["type"] ?? "") != "ws") return;
+    final type = q["type"] ?? "";
+    if (type != "ws" && type != "httpupgrade") return;
     if ((q["security"] ?? "none") != "none") {
-      _add(null, "WebSocket over TLS: only the TCP check is done here.");
+      _add(null, "Upgrade over TLS: only the TCP check is done here.");
       return;
+    }
+    // A gated lock must present the token the real tunnel would send.
+    String? token;
+    final gated = c.gateCode != null && c.creator != null;
+    if (gated) {
+      try {
+        token = GateToken.current(c.gateCode!, c.creator!);
+      } on Object {
+        _add(false, "Could not compute the gate token in this build.");
+        return;
+      }
     }
     final path = (q["path"] ?? "/").isEmpty ? "/" : q["path"]!;
     final hostHdr =
@@ -81,18 +103,32 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
     final key = base64.encode(List<int>.generate(16, (i) => i * 7 + 3));
     s.write("GET $path HTTP/1.1\r\nHost: $hostHdr\r\nUpgrade: websocket\r\n"
         "Connection: Upgrade\r\nSec-WebSocket-Key: $key\r\n"
-        "Sec-WebSocket-Version: 13\r\n\r\n");
+        "Sec-WebSocket-Version: 13\r\n"
+        "${token == null ? "" : "${GateToken.header}: $token\r\n"}\r\n");
     try {
       final data = await s.first.timeout(const Duration(seconds: 8));
       final first = latin1.decode(data).split("\r\n").first;
       final code = int.tryParse(first.split(" ").elementAtOrNull(1) ?? "");
       if (code == 101) {
-        _add(true, "Server accepted the WebSocket upgrade (101) on this path.");
+        _add(
+            true,
+            gated
+                ? "The gate accepted this file's token and passed the upgrade (101)."
+                : "Server accepted the upgrade (101) on this path.");
+      } else if (gated) {
+        _add(
+            false,
+            "Answered \"$first\" even with the gate token. On the server run "
+            "`sudo cat /etc/oversea/stats.json` and read \"rejects\": "
+            "unknown_code = this lock's line was not added (sudo oversee add …); "
+            "bad_mac = the server's key is not this app's GATE_KEY (sudo oversee key add …); "
+            "bad_day = this phone's date/time is wrong; empty = the request never reached the gate "
+            "(port, firewall, CDN). A 404 from Xray itself = the inbound's path/Host differs.");
       } else {
         _add(
             false,
-            "Server answered \"$first\" to the WebSocket upgrade. "
-            "400/404 = wrong path or Host; 401/403 = a gate/proxy in front wants a token "
+            "Server answered \"$first\" to the upgrade. "
+            "400/404 = wrong path or Host; 401/403/404 behind a gate = it wants a token "
             "(a plain link cannot pass it — use the locked .ovsea file); 5xx = the proxy "
             "in front cannot reach Xray.");
       }
