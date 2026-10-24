@@ -5,7 +5,7 @@
 #
 # Gate runs with  -cdn cloudflare -only-proxy  and a trusted list containing ONLY the edge.
 # Checks:
-#   1  owner through the CDN works                          (WebSocket upgrade + token header pass the CDN)
+#   1  owner through the CDN works                          (WebSocket upgrade + token pass the CDN)
 #   2  same owner connecting DIRECTLY to the gate is refused (origin can't be reached around the CDN)
 #   3  a client with no token through the CDN is refused
 #   4  two different "real clients" behind two edges are counted as 2 distinct IPs (not 1 edge IP)
@@ -46,19 +46,19 @@ OVERSEE_DIR="$W" "$W/oversee" gate -plain 127.0.0.1:8081 -upstream 127.0.0.1:100
 "$W/fakecdn" -listen 127.0.0.1:8091 -origin 127.0.0.1:8081 -src 127.0.0.2 -client-ip 198.51.100.77 >"$W/cdn1.log" 2>&1 &
 "$W/fakecdn" -listen 127.0.0.1:8092 -origin 127.0.0.1:8081 -src 127.0.0.3 -client-ip 198.51.100.78 >"$W/cdn2.log" 2>&1 &
 
-# A third edge that DROPS the token header, to prove the diagnostic notices.
+# A third edge that DROPS the token, to prove the diagnostic notices.
 "$W/fakecdn" -listen 127.0.0.1:8093 -origin 127.0.0.1:8081 -src 127.0.0.2 -client-ip 198.51.100.79 -strip X-Oversea-Auth >"$W/cdn3.log" 2>&1 &
 sleep 1
 
 # `oversee cdn-test` through each edge (the gate shares OVERSEE_DIR for the probe nonce).
 echo "--- oversee cdn-test through a healthy edge"
 OVERSEE_DIR="$W" "$W/oversee" cdn-test --url http://127.0.0.1:8091 | tee "$W/cdntest_ok.txt"
-grep -q "normal request: token header arrived intact" "$W/cdntest_ok.txt" || { echo "FAIL: cdn-test did not confirm the header"; exit 1; }
-grep -q "WebSocket upgrade: token header arrived intact" "$W/cdntest_ok.txt" || { echo "FAIL: cdn-test did not confirm the header on an upgrade"; exit 1; }
+grep -q "normal request: token arrived intact" "$W/cdntest_ok.txt" || { echo "FAIL: cdn-test did not confirm the token"; exit 1; }
+grep -q "WebSocket upgrade: token arrived intact" "$W/cdntest_ok.txt" || { echo "FAIL: cdn-test did not confirm the token on an upgrade"; exit 1; }
 grep -q "198.51.100.77" "$W/cdntest_ok.txt" || { echo "FAIL: cdn-test did not show the real client IP"; exit 1; }
-echo "--- oversee cdn-test through an edge that strips the header (must FAIL)"
-if OVERSEE_DIR="$W" "$W/oversee" cdn-test --url http://127.0.0.1:8093 >"$W/cdntest_bad.txt" 2>&1; then echo "FAIL: cdn-test passed an edge that strips the header"; cat "$W/cdntest_bad.txt"; exit 1; fi
-grep -q "STRIPPED" "$W/cdntest_bad.txt" || { echo "FAIL: cdn-test did not say the header was stripped"; cat "$W/cdntest_bad.txt"; exit 1; }
+echo "--- oversee cdn-test through an edge that strips the token (must FAIL)"
+if OVERSEE_DIR="$W" "$W/oversee" cdn-test --url http://127.0.0.1:8093 >"$W/cdntest_bad.txt" 2>&1; then echo "FAIL: cdn-test passed an edge that strips the token"; cat "$W/cdntest_bad.txt"; exit 1; fi
+grep -q "STRIPPED" "$W/cdntest_bad.txt" || { echo "FAIL: cdn-test did not say the token was stripped"; cat "$W/cdntest_bad.txt"; exit 1; }
 cat "$W/cdntest_bad.txt" | head -4
 
 mk() { # name port with_token
