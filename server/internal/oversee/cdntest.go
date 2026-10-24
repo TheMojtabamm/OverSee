@@ -15,7 +15,7 @@ import (
 
 // CDNTest asks the running gate, THROUGH the public URL (so through the CDN), what the
 // request looked like on arrival. It answers the questions that decide whether the lock
-// works behind a CDN: does the token header arrive intact, on a normal request and on a
+// works behind a CDN: does the token arrive intact, on a normal request and on a
 // WebSocket upgrade, and does the gate see the real client IP from a trusted edge?
 //
 // baseURL is e.g. https://vpn.example.com (default: https://<domain from settings>).
@@ -81,12 +81,12 @@ func (p Paths) CDNTest(ctx context.Context, baseURL string, client *http.Client)
 		}
 		switch {
 		case !rep.HeaderPresent:
-			add(Fail, mode.name+": the token header was STRIPPED", "X-Oversea-Auth never reached the gate, so locked files can't connect through this CDN",
-				"remove any rule that drops unknown request headers (Fastly VCL / Cloudflare Transform Rules); if you can't, tell me and I'll add a query-string carrier")
+			add(Fail, mode.name+": the token was STRIPPED", "the token never reached the gate, so locked files can't connect through this CDN",
+				"remove any CDN rule that drops unknown request data (Fastly VCL / Cloudflare Transform Rules); if you can't, tell me and I'll add a query-string carrier")
 		case rep.HeaderSHA256 != want || rep.HeaderLen != len(token):
-			add(Fail, mode.name+": the token header was ALTERED in transit", fmt.Sprintf("sent %d bytes, gate received %d", len(token), rep.HeaderLen), "look for header-rewriting rules on the CDN")
+			add(Fail, mode.name+": the token was ALTERED in transit", fmt.Sprintf("sent %d bytes, gate received %d", len(token), rep.HeaderLen), "look for rewriting rules on the CDN")
 		default:
-			add(OK, mode.name+": token header arrived intact", fmt.Sprintf("%d bytes, hash matches", rep.HeaderLen), "")
+			add(OK, mode.name+": token arrived intact", fmt.Sprintf("%d bytes, hash matches", rep.HeaderLen), "")
 		}
 		if mode.upgrade {
 			continue

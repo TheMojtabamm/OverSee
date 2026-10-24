@@ -6,29 +6,17 @@ server tool, `oversee`, that makes a decoded config useless to anyone but the ap
 - **App** (`lib/`, `android/`): import Xray links, connect through a VpnService tunnel,
   create and share locked `.ovsea` files, AdMob ads. The UI is English only.
 - **Server tool** (`server/`): the `oversee` gate manager with a terminal UI.
-- **Docs** (`docs/`): design, threat model, setup and test plans.
+- **Docs** (`docs/`): setup, store-compliance and test plans.
 
 Status: it compiles, and unit tests, Xray-config validation and end-to-end tests against a
 real Xray and the real gate pass in CI. **It has not been run on a real phone, a real VPS
 or a real Cloudflare/Fastly account yet** — see `docs/DEVICE_TEST_PLAN.md`.
 
-## How the lock works (short version)
+## Locked configs
 
-1. A locked `.ovsea` file is encrypted (AES-256-GCM). Its key is derived inside a native
-   library (`libovs.so`) from secrets that are masked per build, and from a check that the
-   APK is the genuine, unmodified, un-hooked app. A bot that only has the file can't read it.
-2. Each file also carries a random *gate code* and the creator's signature. The app sends a
-   daily token derived from them in an `X-Oversea-Auth` header. The creator's server only
-   lets through tokens for codes on its allow-list.
-3. So even if someone decodes the plain config (a bot, Frida, a re-lock under another
-   name), it **does not connect**: there is no valid header. Revoking a code on the server
-   cuts off that file for everyone, including the real app.
-
-Limits, honestly: the app opens files offline, so a skilled reverse engineer can extract the
-secrets from a build (each build and release makes that costlier, it does not make it
-impossible). The gate needs the transport to carry a header (WebSocket / HTTPUpgrade, also
-through Cloudflare/Fastly); Reality over plain TCP can't be gated. Details:
-`docs/THREAT_MODEL.md`, `docs/LOCK_V3.md`, `docs/GATE.md`.
+A locked `.ovsea` file is encrypted and only opens in the genuine Oversea app. Locks can be
+tied to your own server (the `oversee` tool) and revoked at any time. Details of the design
+are intentionally not published.
 
 ## Server: install and update (one line)
 
@@ -46,9 +34,8 @@ The installer needs the repository's releases to be public. `server-latest` is r
 `.github/workflows/server-release.yml` on every push to `main` that changes `server/`
 (or run that workflow manually).
 
-Useful commands: `oversee doctor` (finds holes that make the lock pointless, e.g. Xray
-reachable around the gate), `oversee cdn-test` (does the header survive your CDN),
-`oversee add / revoke / list`. Full guide: `docs/GATE.md`.
+Useful commands: `oversee doctor` (checks the setup), `oversee cdn-test` (checks your CDN),
+`oversee add / revoke / list`. A step-by-step guide is built into `oversee` (Guide tab).
 
 ## App: build
 
@@ -98,7 +85,7 @@ android/    VpnService, Xray bridge, native lock core (cpp/), manifest
 server/     Go module: internal/gate (the gate), internal/oversee + internal/tui, cmd/oversee, install.sh
 tool/       Xray build, config validation, secret masking/verification, e2e scripts
 test/       Dart tests (codec, gate token, tamper, importer, UI smoke screenshots → build/shots)
-docs/       ANDROID_PLAN, LOCK_V3, LOCK_OFFLINE, THREAT_MODEL, GATE, PLAY_COMPLIANCE,
+docs/       ANDROID_PLAN, PLAY_COMPLIANCE,
             PRIVACY_POLICY, ADMOB_SETUP, DEVICE_TEST_PLAN
 ```
 

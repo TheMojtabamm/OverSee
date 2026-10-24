@@ -18,7 +18,7 @@ import (
 const ProbePath = "/__probe/"
 
 // Probe answers "what did the request look like when it reached the gate?" so the operator
-// can check that the CDN passes the token header and reports the real client IP.
+// can check that the CDN passes the token and reports the real client IP.
 type Probe struct {
 	// File holds `<nonce> <unix expiry>`, written by `oversee cdn-test`.
 	File string

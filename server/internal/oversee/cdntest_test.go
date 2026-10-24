@@ -73,7 +73,7 @@ func TestCDNTest_HealthyEdge(t *testing.T) {
 		t.Fatalf("%+v", f)
 	}
 	m := levels(f)
-	if m["normal request: token header arrived intact"] != OK || m["WebSocket upgrade: token header arrived intact"] != OK {
+	if m["normal request: token arrived intact"] != OK || m["WebSocket upgrade: token arrived intact"] != OK {
 		t.Fatalf("both request shapes must pass: %v", m)
 	}
 	var seen string

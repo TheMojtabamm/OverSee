@@ -17,7 +17,7 @@ type guideTopic struct {
 
 var guideTopics = []guideTopic{
 	{"How it works", "How it works", `# The picture
-The phone connects to the GATE (ports 80/443 on your server). The gate checks a secret header from the Oversea app and only then passes the connection to Xray, which listens on 127.0.0.1:10000 and is not reachable from outside.
+The phone connects to the GATE (ports 80/443 on your server). The gate checks the Oversea app's token and only then passes the connection to Xray, which listens on 127.0.0.1:10000 and is not reachable from outside.
 - With a CDN:   phone → Cloudflare/Fastly → gate → Xray
 - Without CDN:  phone → gate → Xray
 
@@ -68,7 +68,7 @@ $ vless://UUID@vpn.example.com:443?encryption=none&security=tls&sni=vpn.example.
 ✓ TLS is real here: the phone ↔ server traffic is encrypted.
 ! Let's Encrypt cannot reach a server hidden behind an orange-cloud CDN. For that, use topic 3.`},
 
-	{"CDN (Cloudflare)", "Behind a CDN (Cloudflare)", `# Large channels hide the server behind a CDN. The gate supports it, but the CDN must carry WebSockets and keep the X-Oversea-Auth header.
+	{"CDN (Cloudflare)", "Behind a CDN (Cloudflare)", `# Large channels hide the server behind a CDN. The gate supports it, but the CDN must carry WebSockets and pass the app's token through.
 - 1. Cloudflare DNS: A record vpn.example.com → your IP, cloud ORANGE (proxied).
 - 2. Cloudflare → SSL/TLS → mode "Full (strict)".
 - 3. Cloudflare → SSL/TLS → Origin Server → Create Certificate (RSA, 15 years). Save the two files on the server:
@@ -83,7 +83,7 @@ $ sudo oversee set cert /etc/oversea/origin.pem
 $ sudo oversee set key /etc/oversea/origin.key
 $ sudo oversee set only-proxy on
 $ sudo systemctl restart oversee-gate
-- 5. Check that the CDN really passes the secret header (it fails loudly if it does not):
+- 5. Check that the CDN really passes the token (it fails loudly if it does not):
 $ sudo oversee cdn-test
 - 6. Client link: address = your domain, port 443, TLS on, sni and host = your domain:
 $ vless://UUID@vpn.example.com:443?encryption=none&security=tls&sni=vpn.example.com&type=ws&host=vpn.example.com&path=%2Fws
@@ -91,7 +91,7 @@ $ vless://UUID@vpn.example.com:443?encryption=none&security=tls&sni=vpn.example.
 # Good to know
 - only-proxy makes the gate refuse anything that did not come through the CDN, so the origin IP is useless to scanners.
 - Cloudflare proxies HTTPS on 443, 2053, 2083, 2087, 2096, 8443.
-- WebSockets are on by default in Cloudflare (Network tab). Fastly: enable WebSocket support and make sure your VCL does not strip or cache X-Oversea-Auth.
+- WebSockets are on by default in Cloudflare (Network tab). Fastly: enable WebSocket support and make sure your VCL does not strip or cache the app's token.
 ! A CDN can suspend accounts that carry VPN traffic. Read its terms.`},
 
 	{"CDN, no certificate", "CDN without a certificate (Flexible)", `# Cloudflare "Flexible": the CDN talks HTTPS to the phone and plain HTTP to your server. No certificate on your server.
@@ -114,7 +114,7 @@ The gate can sit in front of it too: it just listens in plain HTTP on the port y
 - 2. Let the gate take the public port, e.g. 1001:
 $ sudo oversee set plain :1001
 $ sudo systemctl restart oversee-gate
-- 3. Clients keep the same kind of link; only the secret header is new:
+- 3. Clients keep the same kind of link; only the token is new:
 $ vless://UUID@vpn.example.com:1001?encryption=none&security=none&type=ws&host=vpn.example.com&path=%2Fws
 - 4. Lock it in the app (Share → Locked file → Server gate) and add the line in the Locks tab.
 
@@ -160,12 +160,12 @@ $ vless://UUID@vpn.example.com:443?encryption=none&security=tls&sni=vpn.example.
 $ vless://UUID@vpn.example.com:1001?encryption=none&security=none&type=ws&host=vpn.example.com&path=%2Fws
 
 # Transports the gate can protect
-- WebSocket and HTTPUpgrade: yes (they carry the secret header).
+- WebSocket and HTTPUpgrade: yes (they can carry the token).
 - Reality over plain TCP, gRPC, XHTTP: no. The app refuses to lock those as "gated".`},
 
 	{"Check & fix", "Check & fix", `# Always start here
 $ sudo oversee doctor        what is wrong with this setup
-$ sudo oversee cdn-test      does the CDN keep the secret header
+$ sudo oversee cdn-test      does the CDN pass the token
 $ sudo oversee status        service state and counts
 $ sudo journalctl -u oversee-gate -n 50    recent gate log (Logs tab shows it too)
 
@@ -174,7 +174,7 @@ $ sudo journalctl -u oversee-gate -n 50    recent gate log (Logs tab shows it to
 - Works for a day, then stops: the phone's clock or token window. Try  sudo oversee set token-days 3  and check the phone's date/time.
 - Refused for ten minutes after testing with plain links: the per-IP block. A valid lock still passes; to switch the block off for good:  sudo oversee set ip-limit off  then restart the gate.
 - A config got copied around (a bot hands out a ready-made config): cap the IPs per lock with  sudo oversee set lock-ips 5  (0 = no cap). A shared token then works for the first 5 IPs of the day only; revoke the lock and issue a new file.
-- Works without CDN, fails with CDN: run cdn-test. It tells you if the header is stripped or the real client IP is not visible.
+- Works without CDN, fails with CDN: run cdn-test. It tells you if the token is stripped or the real client IP is not visible.
 - "Refused" counters rise in the Locks tab: someone is probing with a decoded or re-locked config. That is the gate doing its job.
 - A lock is used from many IPs ("shared?"): revoke it (Locks → d) and issue a new file.
 - Phone connects but nothing loads: Xray is not on 127.0.0.1:10000, or its outbound is blocked. Check Xray's own log.

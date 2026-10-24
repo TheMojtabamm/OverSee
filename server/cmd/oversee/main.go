@@ -185,7 +185,7 @@ oversee — manage the Oversea gate
   oversee revoke <id>     revoke a lock (id or code, at least 4 characters)
   oversee keys            list app keys (masked)
   oversee key add <key>   make <key> the current app key
-  oversee cdn-test        check the token header and real client IP survive your CDN
+  oversee cdn-test        check the token and real client IP survive your CDN
   oversee doctor          audit the setup (is Xray reachable around the gate?)
   oversee set <name> <v>  change a setting (domain, upstream, cdn, only-proxy, cert, key, …)
   oversee proxies update  refresh the CDN's IP ranges (cloudflare|fastly)

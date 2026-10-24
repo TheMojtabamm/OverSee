@@ -24,7 +24,7 @@ makes no revenue split; only the app owner earns. Creators who lock configs get 
 
 The release workflow now **fails** if any of these is missing or one of Google's test IDs,
 so a release cannot ship with test ads by accident. The existing signing, `LOCK_P1..P4`,
-`GATE_KEY` secrets are also needed (see GATE.md / release.yml).
+`GATE_KEY` secrets are also needed (see release.yml).
 
 ## Before real users
 - Never tap your own live ads (account suspension). Add your phone as an AdMob **test device**.

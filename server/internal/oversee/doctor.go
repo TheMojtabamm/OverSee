@@ -178,7 +178,7 @@ func (p Paths) Doctor(env DoctorEnv) []Finding {
 		}
 	case s.Plain != "":
 		if s.CDN == "" {
-			add(Warn, "Plain HTTP and no CDN", "the token header travels unencrypted, so anyone on the path can copy it", "terminate TLS (oversee set domain/cert) or put a CDN that does in front")
+			add(Warn, "Plain HTTP and no CDN", "the token travels unencrypted, so anyone on the path can copy it", "terminate TLS (oversee set domain/cert) or put a CDN that does in front")
 		} else {
 			add(OK, "Plain HTTP behind a CDN", "the CDN terminates TLS; keep the CDN→origin hop on a trusted network or use cert/key", "")
 		}
