@@ -21,8 +21,9 @@ const (
 )
 
 var (
-	appKey  = []byte("test-app-key-0123456789")
-	now     = time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	appKey = []byte("test-app-key-0123456789")
+	// Today at noon UTC: reject counters use the real clock, so a fixed date breaks the day after.
+	now     = time.Now().UTC().Truncate(24 * time.Hour).Add(12 * time.Hour)
 	appKeys = [][]byte{appKey}
 	allow   = map[string]Entry{CodeID(code): {Code: code, CreatorFp: ownerFp}}
 )
