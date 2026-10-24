@@ -139,10 +139,22 @@ jobs:
         env:
           ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
         run: >
-          flutter build apk --release --target-platform android-arm64
+          flutter build apk --release --target-platform android-arm,android-arm64,android-x64
           --build-number=${{ env.BUILD_NUMBER }} --build-name=${{ env.BUILD_NAME }}
           --dart-define=EXPECTED_CERTS=${{ env.EXPECTED_CERTS }} --dart-define=AD_INTERSTITIAL_ID=${{ secrets.AD_INTERSTITIAL_ID }} --dart-define=AD_BANNER_ID=${{ secrets.AD_BANNER_ID }}
           --obfuscate --split-debug-info=build/symbols
+
+      # One APK for every phone: 32-bit ARM (older Android 9 phones), 64-bit ARM, x86_64.
+      - name: Verify the APK carries every ABI
+        run: |
+          set -e
+          for abi in armeabi-v7a arm64-v8a x86_64; do
+            for so in libapp.so libovs.so libgojni.so; do
+              unzip -l build/app/outputs/flutter-apk/app-release.apk "lib/$abi/$so" | grep -q "lib/$abi/$so" \
+                || { echo "::error::lib/$abi/$so is missing from the APK"; exit 1; }
+            done
+          done
+          echo "ok: armeabi-v7a, arm64-v8a, x86_64"
 
       - name: Verify no secret is a plain string in the APK
         env:
