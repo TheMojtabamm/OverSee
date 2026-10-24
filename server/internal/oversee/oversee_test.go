@@ -203,6 +203,12 @@ func TestSetSetting(t *testing.T) {
 	if err := p.SetSetting("ip-limit", "on"); err != nil || p.LoadSettings().NoIPLimit {
 		t.Fatalf("ip-limit on: %v", err)
 	}
+	if err := p.SetSetting("lock-ips", "5"); err != nil || p.LoadSettings().LockIPs != 5 {
+		t.Fatalf("lock-ips: %v", err)
+	}
+	if err := p.SetSetting("lock-ips", "-1"); err == nil {
+		t.Fatal("negative lock-ips must be refused")
+	}
 	if err := p.SetSetting("only-proxy", "on"); err != nil {
 		t.Fatal(err)
 	}

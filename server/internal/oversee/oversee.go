@@ -62,6 +62,9 @@ type Settings struct {
 	// NoIPLimit turns off the per-IP block (20 bad tokens a minute => 10 minutes refused).
 	NoIPLimit bool
 
+	// LockIPs caps the distinct client IPs one lock may be used from per day (0 = no cap).
+	LockIPs int
+
 	// CDN fronting. CDN is "", "cloudflare", "fastly" or "generic". OnlyProxy refuses any
 	// connection that did not come through the CDN. Cert/Key serve TLS from files (e.g. a
 	// Cloudflare Origin CA certificate) instead of Let's Encrypt, which can't validate an
@@ -126,6 +129,8 @@ func (p Paths) LoadSettings() Settings {
 			s.CDN = strings.TrimSpace(v)
 		case "ONLY_PROXY":
 			s.OnlyProxy = strings.TrimSpace(v) == "1" || strings.TrimSpace(v) == "true"
+		case "LOCK_IPS":
+			fmt.Sscanf(strings.TrimSpace(v), "%d", &s.LockIPs)
 		case "IP_LIMIT":
 			switch strings.ToLower(strings.TrimSpace(v)) {
 			case "off", "0", "false", "no":
@@ -158,8 +163,8 @@ func (p Paths) SaveSettings(s Settings) error {
 	if s.NoIPLimit {
 		lim = "off"
 	}
-	body := fmt.Sprintf("# managed by `oversee`\nDOMAIN=%s\nUPSTREAM=%s\nPLAIN=%s\nLEAK_IPS=%d\nCDN=%s\nONLY_PROXY=%s\nCERT=%s\nKEY=%s\nTOKEN_DAYS=%d\nPORT=%d\nIP_LIMIT=%s\n",
-		s.Domain, s.Upstream, s.Plain, s.LeakIPs, s.CDN, op, s.Cert, s.Key, s.TokenDays, s.Port, lim)
+	body := fmt.Sprintf("# managed by `oversee`\nDOMAIN=%s\nUPSTREAM=%s\nPLAIN=%s\nLEAK_IPS=%d\nCDN=%s\nONLY_PROXY=%s\nCERT=%s\nKEY=%s\nTOKEN_DAYS=%d\nPORT=%d\nIP_LIMIT=%s\nLOCK_IPS=%d\n",
+		s.Domain, s.Upstream, s.Plain, s.LeakIPs, s.CDN, op, s.Cert, s.Key, s.TokenDays, s.Port, lim, s.LockIPs)
 	return writeAtomic(p.Conf, []byte(body), 0o640)
 }
 
@@ -498,6 +503,12 @@ func (p Paths) SetSetting(name, value string) error {
 			return errors.New("set a CDN first: oversee set cdn cloudflare")
 		}
 		s.OnlyProxy = on
+	case "lock-ips":
+		n := 0
+		if _, err := fmt.Sscanf(value, "%d", &n); err != nil || n < 0 || n > 10000 {
+			return errors.New("lock-ips must be 0 (no cap) to 10000")
+		}
+		s.LockIPs = n
 	case "ip-limit":
 		s.NoIPLimit = !(value == "1" || value == "true" || value == "on" || value == "yes")
 	case "token-days":
@@ -517,7 +528,7 @@ func (p Paths) SetSetting(name, value string) error {
 		}
 		s.Port = n
 	default:
-		return fmt.Errorf("unknown setting %q (domain, upstream, plain, port, leak-ips, cdn, only-proxy, ip-limit, token-days, cert, key)", name)
+		return fmt.Errorf("unknown setting %q (domain, upstream, plain, port, leak-ips, cdn, only-proxy, ip-limit, lock-ips, token-days, cert, key)", name)
 	}
 	if (s.Cert == "") != (s.Key == "") && (name == "cert" || name == "key") && value != "" {
 		// allowed transiently: the user sets one then the other; the gate refuses to start

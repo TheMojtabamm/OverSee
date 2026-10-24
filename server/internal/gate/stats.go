@@ -50,6 +50,26 @@ func (s *Stats) hashIP(ip string) uint64 {
 	return binary.BigEndian.Uint64(h[:8])
 }
 
+// AllowIP reports whether ip may use lock id today: an IP already seen today always may; a new
+// one only while the lock has fewer than cap distinct IPs (cap <= 0 = no limit). A leaked token
+// (a bot handing out a ready-made config) therefore works for the first cap IPs only.
+func (s *Stats) AllowIP(id, ip string, cap int, now time.Time) bool {
+	if cap <= 0 {
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.roll(now)
+	ls := s.locks[id]
+	if ls == nil {
+		return true
+	}
+	if _, ok := ls.ips[s.hashIP(ip)]; ok {
+		return true
+	}
+	return len(ls.ips) < cap
+}
+
 func (s *Stats) accept(id, ip string, now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

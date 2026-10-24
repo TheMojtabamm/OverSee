@@ -36,6 +36,7 @@ func RunGate(p Paths, args []string) error {
 	cert := fs.String("cert", st.Cert, "TLS certificate file (e.g. Cloudflare Origin CA)")
 	keyFile := fs.String("key", st.Key, "TLS private key file")
 	ipLimit := fs.Bool("ip-limit", !st.NoIPLimit, "block an IP for 10 minutes after 20 bad tokens a minute (off: never block)")
+	lockIPs := fs.Int("lock-ips", st.LockIPs, "max distinct client IPs per lock per day (0 = no cap): a shared/leaked config stops after this many")
 	tokenDays := fs.Int("token-days", st.TokenDays, "accept tokens from ±N days (default 1): longer lets a tunnel up for days reconnect")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -121,13 +122,14 @@ func RunGate(p Paths, args []string) error {
 		log.Printf("ip-limit is off: no IP is ever blocked")
 	}
 	h := gate.NewWithOptions(up, al.Get, kf.Get, gate.Options{
-		Limiter:   limiter,
-		Stats:     stats,
-		Proxies:   tp,
-		Provider:  prov,
-		OnlyProxy: *onlyProxy,
-		Probe:     &gate.Probe{File: p.Probe},
-		SkewDays:  clampDays(*tokenDays),
+		Limiter:       limiter,
+		MaxIPsPerLock: *lockIPs,
+		Stats:         stats,
+		Proxies:       tp,
+		Provider:      prov,
+		OnlyProxy:     *onlyProxy,
+		Probe:         &gate.Probe{File: p.Probe},
+		SkewDays:      clampDays(*tokenDays),
 	})
 	log.Printf("gate: %d lock(s), %d app key(s), upstream %s", len(al.Get()), len(kf.Get()), *upstream)
 

@@ -218,7 +218,10 @@ func (a *AllowList) Get() map[string]Entry { return *a.cur.Load() }
 // Options tune the handler. The zero value is valid (no limiter, no stats).
 type Options struct {
 	Limiter *Limiter
-	Stats   *Stats
+
+	// MaxIPsPerLock caps the distinct client IPs one lock may be used from per UTC day (0 = no cap).
+	MaxIPsPerLock int
+	Stats         *Stats
 
 	// Behind a CDN: which networks may speak for a client, which header carries the real
 	// IP, and whether to refuse connections that did NOT come through the CDN (so the
@@ -306,6 +309,12 @@ func newWithClock(upstream *url.URL, entries func() map[string]Entry, appKeys fu
 			if o.Stats != nil {
 				o.Stats.reject(res.String())
 			}
+			http.NotFound(w, r)
+			return
+		}
+		if o.Stats != nil && !o.Stats.AllowIP(id, ip, o.MaxIPsPerLock, t) {
+			// A valid token, but from one IP too many for this lock today: it has been shared.
+			o.Stats.reject("ip_cap")
 			http.NotFound(w, r)
 			return
 		}

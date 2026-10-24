@@ -397,3 +397,29 @@ func TestStatsFileDoesNotContainIPs(t *testing.T) {
 		t.Fatalf("%v %+v", err, sn)
 	}
 }
+
+func TestLockIPCapStopsASharedToken(t *testing.T) {
+	st := NewStats()
+	id := CodeID(code)
+	for _, ip := range []string{"198.51.100.1", "198.51.100.2"} {
+		if !st.AllowIP(id, ip, 2, now) {
+			t.Fatalf("%s must be allowed under the cap", ip)
+		}
+		st.accept(id, ip, now)
+	}
+	if !st.AllowIP(id, "198.51.100.1", 2, now) {
+		t.Fatal("an IP already seen today must keep working")
+	}
+	if st.AllowIP(id, "198.51.100.3", 2, now) {
+		t.Fatal("a third IP must be refused: the token has been shared")
+	}
+	if !st.AllowIP(id, "198.51.100.3", 0, now) {
+		t.Fatal("cap 0 means no limit")
+	}
+	if !st.AllowIP("other-lock", "198.51.100.3", 2, now) {
+		t.Fatal("the cap is per lock")
+	}
+	if !st.AllowIP(id, "198.51.100.3", 2, now.Add(24*time.Hour)) {
+		t.Fatal("the cap resets with the UTC day")
+	}
+}

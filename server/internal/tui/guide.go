@@ -173,6 +173,7 @@ $ sudo journalctl -u oversee-gate -n 50    recent gate log (Logs tab shows it to
 - Every connection refused: no app key (Keys tab), or the lock's line is not in the Locks tab yet.
 - Works for a day, then stops: the phone's clock or token window. Try  sudo oversee set token-days 3  and check the phone's date/time.
 - Refused for ten minutes after testing with plain links: the per-IP block. A valid lock still passes; to switch the block off for good:  sudo oversee set ip-limit off  then restart the gate.
+- A config got copied around (a bot hands out a ready-made config): cap the IPs per lock with  sudo oversee set lock-ips 5  (0 = no cap). A shared token then works for the first 5 IPs of the day only; revoke the lock and issue a new file.
 - Works without CDN, fails with CDN: run cdn-test. It tells you if the header is stripped or the real client IP is not visible.
 - "Refused" counters rise in the Locks tab: someone is probing with a decoded or re-locked config. That is the gate doing its job.
 - A lock is used from many IPs ("shared?"): revoke it (Locks → d) and issue a new file.
