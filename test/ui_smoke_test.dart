@@ -196,7 +196,23 @@ void main() {
         ping: {"1": 92, "2": 310, "3": 840, "4": -1},
         selected: "1");
     expect(find.text("Tap to connect"), findsOneWidget);
-    expect(find.text("92 ms"), findsOneWidget);
+    expect(find.text("All configs (4)"), findsOneWidget);
+  });
+
+  testWidgets("configs tab — list with ping, then subscriptions", (t) async {
+    await _show(t,
+        shot: "configs_dark",
+        configs: _samples,
+        ping: {"1": 92, "2": 310, "3": 840, "4": -1},
+        selected: "1",
+        tab: 1, then: (t) async {
+      expect(find.text("92 ms"), findsOneWidget);
+      await t.tap(find.text("Subscriptions"));
+      for (var i = 0; i < 4; i++) {
+        await t.pump(const Duration(milliseconds: 150));
+      }
+      expect(find.text("No subscriptions"), findsOneWidget);
+    });
   });
 
   testWidgets("home — connected with speed and timer", (t) async {
@@ -244,8 +260,11 @@ void main() {
   });
 
   testWidgets("add sheet", (t) async {
-    await _show(t, shot: "add_sheet_dark", configs: _samples, selected: "1",
-        then: (t) async {
+    await _show(t,
+        shot: "add_sheet_dark",
+        configs: _samples,
+        selected: "1",
+        tab: 1, then: (t) async {
       await t.tap(find.widgetWithText(FilledButton, "Add"));
       for (var i = 0; i < 8; i++) {
         await t.pump(const Duration(milliseconds: 150));
@@ -260,6 +279,7 @@ void main() {
   testWidgets("empty home has an Add button", (t) async {
     await _show(t, shot: "home_empty_light", mode: ThemeMode.light);
     expect(find.text("Add a config"), findsOneWidget);
+    await _show(t, shot: "configs_empty_light", tab: 1, mode: ThemeMode.light);
     expect(find.widgetWithText(FilledButton, "Add"), findsOneWidget);
   });
 
@@ -267,7 +287,8 @@ void main() {
     await _show(t,
         shot: "config_actions_dark",
         configs: _samples,
-        selected: "1", then: (t) async {
+        selected: "1",
+        tab: 1, then: (t) async {
       await t.tap(find.byIcon(Icons.more_horiz_rounded).first);
       for (var i = 0; i < 8; i++) {
         await t.pump(const Duration(milliseconds: 150));
@@ -360,12 +381,12 @@ void main() {
   });
 
   testWidgets("settings", (t) async {
-    await _show(t, shot: "settings_dark", tab: 1);
+    await _show(t, shot: "settings_dark", tab: 2);
     expect(find.text("Kill switch"), findsOneWidget);
   });
 
   testWidgets("settings (light)", (t) async {
-    await _show(t, shot: "settings_light", tab: 1, mode: ThemeMode.light);
+    await _show(t, shot: "settings_light", tab: 2, mode: ThemeMode.light);
   });
 
   testWidgets("onboarding", (t) async {

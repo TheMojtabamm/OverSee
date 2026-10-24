@@ -5,7 +5,7 @@ All logic already exists; a new UI only has to *call* the pieces below. Do not r
 parsing, locking, tunnel or gate logic in widgets.
 
 Entry points: `lib/main.dart` → `lib/app.dart` → `lib/features/shell/root_shell.dart`
-(2 bottom tabs: Home, Settings; adding configs is the Add button on Home's Configs header). Theme/tokens: `lib/ui/theme.dart`, shared widgets
+(3 bottom tabs: Home, Configs, Settings; the Configs tab has a Configs | Subscriptions switch and the Add button). Theme/tokens: `lib/ui/theme.dart`, shared widgets
 `lib/ui/widgets.dart`, big button `lib/ui/connect_button.dart`. All user-visible text lives in
 `lib/core/strings.dart` (`S.of(context).t("key")`); add keys there, never hard-code.
 
@@ -49,7 +49,7 @@ Needs:
 - Ad slot: `BannerAdBox` (zero height until loaded).
 
 ### Add (`features/add/add_sheet.dart` → `showAddSheet`)
-A bottom sheet opened from Home's Configs header: paste from clipboard, scan a QR (`qr_scan_screen.dart`,
+A bottom sheet opened from the Configs tab: paste from clipboard, scan a QR (`qr_scan_screen.dart`,
 camera or gallery image), open a file, type a link, create manually (`features/editor/config_editor_screen.dart`),
 add a subscription (`features/subscriptions`). Text sources go through `add_actions.dart` →
 `Importer.fromText` → `configsProvider.addAll`; show `errorKey` via strings.

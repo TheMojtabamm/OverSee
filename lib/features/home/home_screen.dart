@@ -14,6 +14,7 @@ import "../../ui/widgets.dart";
 import "../add/add_sheet.dart";
 import "../ads/banner_ad.dart";
 import "../configs/config_actions.dart";
+import "../configs/configs_screen.dart";
 import "../configs/connect_flow.dart";
 
 class HomeScreen extends ConsumerWidget {
@@ -116,138 +117,40 @@ class _Body extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final s = S.of(context);
     final c = context.colors;
-    final ping = ref.watch(pingProvider);
     final selected = ref.watch(selectedConfigProvider);
-
-    // Fastest first; untested keep their order; failed go last.
-    int rank(VpnConfig c) {
-      final p = ping[c.id];
-      if (p == null || p == -2) return 1 << 29;
-      return p < 0 ? 1 << 30 : p;
-    }
-
-    final sorted = [...list]..sort((a, b) => rank(a).compareTo(rank(b)));
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
       children: [
         _Hero(selected: selected),
         _Notice(selected: selected),
-        Padding(
-          padding: const EdgeInsets.only(top: 24, bottom: 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text.rich(TextSpan(children: [
-                  TextSpan(
-                      text: s.t("configs_header"),
+        if (list.isEmpty)
+          ConfigsEmpty(onAdd: () => showAddSheet(context, ref))
+        else ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 24, bottom: 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(s.t("selected_header"),
                       style: const TextStyle(
                           fontSize: 16.5, fontWeight: FontWeight.w700)),
-                  if (list.isNotEmpty)
-                    TextSpan(
-                        text: "  ${list.length}",
-                        style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w500,
-                            color: c.muted)),
-                ])),
-              ),
-              if (list.isNotEmpty)
-                _LinkButton(
-                  icon: Icons.bolt_rounded,
-                  label: s.t("test_speed"),
-                  onTap: () => testAllPings(ref, list),
                 ),
-              const SizedBox(width: 6),
-              FilledButton.icon(
-                onPressed: () => showAddSheet(context, ref),
-                style: FilledButton.styleFrom(
-                    minimumSize: const Size(0, 38),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    textStyle: const TextStyle(
-                        fontFamily: AppTheme.font,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600)),
-                icon: const Icon(Icons.add_rounded, size: 18),
-                label: Text(s.t("add_short")),
-              ),
-            ],
+                LinkButton(
+                  icon: Icons.layers_rounded,
+                  label: "${s.t("all_configs")} (${list.length})",
+                  onTap: () => ref.read(tabProvider.notifier).state = 1,
+                ),
+              ],
+            ),
           ),
-        ),
-        if (list.isEmpty)
-          _Empty(onAdd: () => showAddSheet(context, ref))
-        else
-          for (final cfg in sorted) ...[
-            ConfigCard(config: cfg, selected: selected?.id == cfg.id),
-            const SizedBox(height: 8),
-          ],
-      ],
-    );
-  }
-}
-
-class _LinkButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  const _LinkButton(
-      {required this.icon, required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 16, color: c.brand),
-          const SizedBox(width: 4),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 13, fontWeight: FontWeight.w600, color: c.brand)),
-        ]),
-      ),
-    );
-  }
-}
-
-class _Empty extends StatelessWidget {
-  final VoidCallback onAdd;
-  const _Empty({required this.onAdd});
-
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    final c = context.colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 26, 10, 10),
-      child: Column(
-        children: [
-          Container(
-            width: 84,
-            height: 84,
-            decoration:
-                BoxDecoration(color: c.brandSoft, shape: BoxShape.circle),
-            child: Icon(Icons.add_link_rounded, size: 38, color: c.brand),
-          ),
-          const SizedBox(height: 16),
-          Text(s.t("empty_title"),
-              style:
-                  const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          Text(s.t("empty_hint"),
-              textAlign: TextAlign.center,
-              style: TextStyle(color: c.muted, height: 1.5, fontSize: 14)),
-          const SizedBox(height: 18),
-          FilledButton.icon(
-            onPressed: onAdd,
-            icon: const Icon(Icons.add_rounded),
-            label: Text(s.t("empty_cta_add")),
-          ),
+          if (selected != null)
+            ConfigCard(config: selected, selected: true)
+          else
+            Text(s.t("pick_config_hint"),
+                style: TextStyle(color: c.muted, height: 1.5)),
         ],
-      ),
+      ],
     );
   }
 }

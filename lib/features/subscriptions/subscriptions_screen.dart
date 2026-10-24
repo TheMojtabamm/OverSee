@@ -140,7 +140,9 @@ String _ago(DateTime? t) {
 }
 
 class SubscriptionsScreen extends ConsumerStatefulWidget {
-  const SubscriptionsScreen({super.key});
+  /// Inside the Configs tab: no app bar, the actions sit in the list itself.
+  final bool embedded;
+  const SubscriptionsScreen({super.key, this.embedded = false});
   @override
   ConsumerState<SubscriptionsScreen> createState() =>
       _SubscriptionsScreenState();
@@ -222,22 +224,39 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final subs = ref.watch(subscriptionsProvider).valueOrNull ?? const [];
+    final updateAll = IconButton(
+      tooltip: "Update all",
+      onPressed: _all ? null : _refreshAll,
+      icon: _all
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2))
+          : const Icon(Icons.sync_rounded),
+    );
+    final body = _body(c, subs);
+    if (widget.embedded) {
+      return Stack(children: [
+        body,
+        Positioned(
+          right: 18,
+          bottom: 16,
+          child: FloatingActionButton.extended(
+            heroTag: "add_sub",
+            onPressed: () => showAddSubscriptionDialog(context, ref),
+            backgroundColor: c.brand,
+            foregroundColor: Theme.of(context).colorScheme.onPrimary,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text("Add"),
+          ),
+        ),
+        if (subs.isNotEmpty) Positioned(right: 8, top: 0, child: updateAll),
+      ]);
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text("Subscriptions"),
-        actions: [
-          if (subs.isNotEmpty)
-            IconButton(
-              tooltip: "Update all",
-              onPressed: _all ? null : _refreshAll,
-              icon: _all
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.sync_rounded),
-            ),
-        ],
+        actions: [if (subs.isNotEmpty) updateAll],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => showAddSubscriptionDialog(context, ref),
@@ -246,98 +265,101 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
         icon: const Icon(Icons.add_rounded),
         label: const Text("Add"),
       ),
-      body: subs.isEmpty
-          ? EmptyState(
-              icon: Icons.sync_rounded,
-              title: "No subscriptions",
-              body:
-                  "A subscription is a link that gives you a list of configs. Add it once and update the list whenever you like.",
-              actions: [
-                FilledButton.icon(
-                  onPressed: () => showAddSubscriptionDialog(context, ref),
-                  icon: const Icon(Icons.add_rounded),
-                  label: const Text("Add a subscription"),
-                ),
-              ],
-            )
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(18, 4, 18, 96),
-              children: [
-                for (final s in subs)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 12, 4, 12),
-                        child: Row(children: [
-                          const IconTile(Icons.sync_rounded, size: 42),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(s.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 15)),
-                                const SizedBox(height: 2),
-                                Text(
-                                    "${s.count} config${s.count == 1 ? "" : "s"}  ·  ${_ago(s.updatedAt)}",
-                                    style: TextStyle(
-                                        color: c.muted, fontSize: 12.5)),
-                                if (s.error != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(s.error!,
-                                        style: TextStyle(
-                                            color: c.bad, fontSize: 12.5)),
-                                  ),
-                              ],
-                            ),
+      body: body,
+    );
+  }
+
+  Widget _body(AppColors c, List<Subscription> subs) {
+    return subs.isEmpty
+        ? EmptyState(
+            icon: Icons.sync_rounded,
+            title: "No subscriptions",
+            body:
+                "A subscription is a link that gives you a list of configs. Add it once and update the list whenever you like.",
+            actions: [
+              FilledButton.icon(
+                onPressed: () => showAddSubscriptionDialog(context, ref),
+                icon: const Icon(Icons.add_rounded),
+                label: const Text("Add a subscription"),
+              ),
+            ],
+          )
+        : ListView(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 96),
+            children: [
+              for (final s in subs)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 4, 12),
+                      child: Row(children: [
+                        const IconTile(Icons.sync_rounded, size: 42),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(s.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 15)),
+                              const SizedBox(height: 2),
+                              Text(
+                                  "${s.count} config${s.count == 1 ? "" : "s"}  ·  ${_ago(s.updatedAt)}",
+                                  style: TextStyle(
+                                      color: c.muted, fontSize: 12.5)),
+                              if (s.error != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(s.error!,
+                                      style: TextStyle(
+                                          color: c.bad, fontSize: 12.5)),
+                                ),
+                            ],
                           ),
-                          if (_busy.contains(s.id))
-                            const Padding(
-                              padding: EdgeInsets.all(12),
-                              child: SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2)),
-                            )
-                          else
-                            PopupMenuButton<String>(
-                              icon: Icon(Icons.more_horiz_rounded,
-                                  color: c.muted),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14)),
-                              onSelected: (v) {
-                                switch (v) {
-                                  case "refresh":
-                                    _refresh(s);
-                                  case "rename":
-                                    _rename(s);
-                                  case "delete":
-                                    _delete(s);
-                                }
-                              },
-                              itemBuilder: (_) => const [
-                                PopupMenuItem(
-                                    value: "refresh",
-                                    child: Text("Update now")),
-                                PopupMenuItem(
-                                    value: "rename", child: Text("Rename")),
-                                PopupMenuItem(
-                                    value: "delete", child: Text("Delete")),
-                              ],
-                            ),
-                        ]),
-                      ),
+                        ),
+                        if (_busy.contains(s.id))
+                          const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2)),
+                          )
+                        else
+                          PopupMenuButton<String>(
+                            icon:
+                                Icon(Icons.more_horiz_rounded, color: c.muted),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14)),
+                            onSelected: (v) {
+                              switch (v) {
+                                case "refresh":
+                                  _refresh(s);
+                                case "rename":
+                                  _rename(s);
+                                case "delete":
+                                  _delete(s);
+                              }
+                            },
+                            itemBuilder: (_) => const [
+                              PopupMenuItem(
+                                  value: "refresh", child: Text("Update now")),
+                              PopupMenuItem(
+                                  value: "rename", child: Text("Rename")),
+                              PopupMenuItem(
+                                  value: "delete", child: Text("Delete")),
+                            ],
+                          ),
+                      ]),
                     ),
                   ),
-              ],
-            ),
-    );
+                ),
+            ],
+          );
   }
 }

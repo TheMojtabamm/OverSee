@@ -6,6 +6,7 @@ import "../../data/incoming_service.dart";
 import "../../providers.dart";
 import "../../ui/theme.dart";
 import "../add/importer.dart";
+import "../configs/configs_screen.dart";
 import "../configs/connect_flow.dart";
 import "../home/home_screen.dart";
 import "../onboarding/onboarding_screen.dart";
@@ -93,7 +94,7 @@ class _RootShellState extends ConsumerState<RootShell>
     return Scaffold(
       body: IndexedStack(
         index: tab,
-        children: const [HomeScreen(), SettingsScreen()],
+        children: const [HomeScreen(), ConfigsScreen(), SettingsScreen()],
       ),
       bottomNavigationBar: DecoratedBox(
         decoration: BoxDecoration(
@@ -107,6 +108,10 @@ class _RootShellState extends ConsumerState<RootShell>
                 icon: const Icon(Icons.home_outlined),
                 selectedIcon: const Icon(Icons.home_rounded),
                 label: s.t("tab_home")),
+            NavigationDestination(
+                icon: const Icon(Icons.layers_outlined),
+                selectedIcon: const Icon(Icons.layers_rounded),
+                label: s.t("tab_configs")),
             NavigationDestination(
                 icon: const Icon(Icons.tune_rounded),
                 selectedIcon: const Icon(Icons.tune_rounded),

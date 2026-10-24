@@ -12,7 +12,6 @@ import "../../ui/theme.dart";
 import "../../ui/widgets.dart";
 import "app_picker_screen.dart";
 import "diagnostics_screen.dart";
-import "../subscriptions/subscriptions_screen.dart";
 import "gate_allowlist_screen.dart";
 
 class SettingsScreen extends ConsumerWidget {
@@ -58,19 +57,6 @@ class SettingsScreen extends ConsumerWidget {
                       .headlineSmall
                       ?.copyWith(fontWeight: FontWeight.w800)),
             ),
-            SettingsGroup(children: [
-              SettingsRow(
-                icon: Icons.rss_feed_rounded,
-                title: "Subscriptions",
-                subtitle: s.t("subs_settings_hint"),
-                trailing: Icon(Icons.chevron_right_rounded, color: c.muted),
-                onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                        builder: (_) => const SubscriptionsScreen())),
-              ),
-            ]),
-            const SizedBox(height: 20),
             SectionTitle(s.t("g_connection")),
             SettingsGroup(children: [
               SettingsRow(

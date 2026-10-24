@@ -120,7 +120,6 @@ class S {
       "copy_line": "Copy line",
       "copy_cmd": "Copy command",
       "copied_short": "Copied",
-      "subs_settings_hint": "Config lists that update from a link",
       "gate_allowlist": "Gate allow-list",
       "gate_allowlist_hint": "Lines for the locks you created",
       "gate_allowlist_empty": "You have not created any gated locks yet.",
@@ -200,6 +199,10 @@ class S {
       "gate_unavailable_notice":
           "This build has no gate key, so the lock only hides the config inside the app. A decoded config would work in any app.",
       "configs_header": "Configs",
+      "subs_header": "Subscriptions",
+      "selected_header": "Selected",
+      "all_configs": "All configs",
+      "pick_config_hint": "Pick a config in the Configs tab.",
       "add_short": "Add",
       "not_protected": "Not protected",
       "notice_blocked_t": "Traffic is blocked",
