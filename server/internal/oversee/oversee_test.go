@@ -197,6 +197,12 @@ func TestSetSetting(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}
+	if err := p.SetSetting("ip-limit", "off"); err != nil || !p.LoadSettings().NoIPLimit {
+		t.Fatalf("ip-limit off: %v", err)
+	}
+	if err := p.SetSetting("ip-limit", "on"); err != nil || p.LoadSettings().NoIPLimit {
+		t.Fatalf("ip-limit on: %v", err)
+	}
 	if err := p.SetSetting("only-proxy", "on"); err != nil {
 		t.Fatal(err)
 	}

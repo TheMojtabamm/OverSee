@@ -35,6 +35,7 @@ func RunGate(p Paths, args []string) error {
 	onlyProxy := fs.Bool("only-proxy", st.OnlyProxy, "refuse connections that did not come through the CDN")
 	cert := fs.String("cert", st.Cert, "TLS certificate file (e.g. Cloudflare Origin CA)")
 	keyFile := fs.String("key", st.Key, "TLS private key file")
+	ipLimit := fs.Bool("ip-limit", !st.NoIPLimit, "block an IP for 10 minutes after 20 bad tokens a minute (off: never block)")
 	tokenDays := fs.Int("token-days", st.TokenDays, "accept tokens from ±N days (default 1): longer lets a tunnel up for days reconnect")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -113,8 +114,14 @@ func RunGate(p Paths, args []string) error {
 	// blocks it for 10 minutes; per-lock distinct-IP counts go to stats.json for the TUI.
 	stats := gate.NewStats()
 	stats.WriteLoop(p.Stats, 5*time.Second)
+	var limiter *gate.Limiter
+	if *ipLimit {
+		limiter = gate.NewLimiter(20, time.Minute, 10*time.Minute)
+	} else {
+		log.Printf("ip-limit is off: no IP is ever blocked")
+	}
 	h := gate.NewWithOptions(up, al.Get, kf.Get, gate.Options{
-		Limiter:   gate.NewLimiter(20, time.Minute, 10*time.Minute),
+		Limiter:   limiter,
 		Stats:     stats,
 		Proxies:   tp,
 		Provider:  prov,
