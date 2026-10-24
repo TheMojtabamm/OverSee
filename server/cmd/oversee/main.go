@@ -8,6 +8,7 @@
 //	oversee keys            list app keys (masked)
 //	oversee key add <key>   make <key> the current app key
 //	oversee status          service state + counts
+//	oversee fixperms        make the gate service able to read its files (run by the service itself)
 //	oversee version
 package main
 
@@ -160,6 +161,10 @@ func main() {
 		default:
 			fatal(fmt.Errorf("unknown: proxies %s", sub))
 		}
+	case "fixperms":
+		n, err := oversee.FixPerms(p.Dir)
+		check(err)
+		fmt.Printf("fixed %d files in %s\n", n, p.Dir)
 	case "version", "-v", "--version":
 		fmt.Println("oversee", version)
 	case "help", "-h", "--help":

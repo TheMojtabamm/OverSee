@@ -63,6 +63,8 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+# "+" = runs as root: repairs file ownership so the unprivileged gate can read its files
+ExecStartPre=+/usr/local/bin/oversee fixperms
 ExecStart=/usr/local/bin/oversee gate
 Restart=on-failure
 RestartSec=3
@@ -83,7 +85,7 @@ WantedBy=multi-user.target
 UNITEOF
   id oversee >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin oversee
   chown -R root:oversee "$DIR"; chmod 0770 "$DIR"; chmod 0660 "$DIR/allow.txt" 2>/dev/null || true
-  [ -f "$DIR/keys.txt" ] && chmod 0660 "$DIR/keys.txt" || true
+  chmod 0660 "$DIR"/*.txt "$DIR"/gate.conf 2>/dev/null || true
   systemctl daemon-reload
   say "service installed (not started yet)"
 else

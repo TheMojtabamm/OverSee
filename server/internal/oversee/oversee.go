@@ -287,7 +287,7 @@ func (p Paths) writeKeys(keys []string) error {
 	}
 	body := "# app keys, newest first. Keep the previous one until old app builds age out.\n" +
 		strings.Join(keys, "\n") + "\n"
-	return writeAtomic(p.Keys, []byte(body), 0o600)
+	return writeAtomic(p.Keys, []byte(body), 0o640) // group "oversee" (the gate) must read it
 }
 
 // AddKey puts key first (making it the current one).
@@ -361,6 +361,7 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 		tmp.Close()
 		return err
 	}
+	inheritOwner(tmp, filepath.Dir(path))
 	if err := tmp.Close(); err != nil {
 		return err
 	}

@@ -146,8 +146,8 @@ func TestKeys(t *testing.T) {
 		t.Error("out of range")
 	}
 	st, _ := os.Stat(p.Keys)
-	if st.Mode().Perm() != 0o600 {
-		t.Errorf("keys file mode %v, want 0600", st.Mode().Perm())
+	if st.Mode().Perm() != 0o640 {
+		t.Errorf("keys file mode %v, want 0640 (group oversee reads it)", st.Mode().Perm())
 	}
 	// the gate can load what we wrote
 	kf, err := gate.LoadKeyFile(p.Keys, nil)
