@@ -345,12 +345,16 @@ func TestHandlerLimiterStatsAndNeverBlocksALegitClientBehindFailures(t *testing.
 			t.Fatal("bad token must 404")
 		}
 	}
-	// same IP is now blocked, even with a valid token (probing source), and still 404
-	if get(good) != 404 {
-		t.Fatal("blocked IP must be refused")
+	// the IP is now blocked for bad tokens: more bad ones stay refused...
+	if get("bad") != 404 {
+		t.Fatal("blocked IP must keep being refused for bad tokens")
+	}
+	// ...but a valid token still passes (honest users share IPs behind CGNAT)
+	if get(good) != 200 {
+		t.Fatal("a valid token must pass even from a blocked IP")
 	}
 	sn := st.Snapshot(now)
-	if len(sn.Locks) != 1 || sn.Locks[0].Accepted != 2 || sn.Locks[0].DistinctIPs != 1 {
+	if len(sn.Locks) != 1 || sn.Locks[0].Accepted != 3 || sn.Locks[0].DistinctIPs != 1 {
 		t.Fatalf("%+v", sn.Locks)
 	}
 	if sn.Rejects["bad_format"] != 3 && sn.Rejects["bad_format"]+sn.Rejects["no_token"] != 3 {

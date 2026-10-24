@@ -263,8 +263,11 @@ func newWithClock(upstream *url.URL, entries func() map[string]Entry, appKeys fu
 			http.NotFound(w, r)
 			return
 		}
-		if o.Limiter != nil && o.Limiter.Blocked(ip, t) {
-			// Already misbehaving: don't even spend CPU on the MAC.
+		// An IP that keeps presenting bad tokens is refused, but a VALID token still passes:
+		// it proves the caller holds the secret, and many honest users share one public IP
+		// (mobile CGNAT), so scanner noise from that address must not lock them out.
+		blocked := o.Limiter != nil && o.Limiter.Blocked(ip, t)
+		if blocked && strings.HasPrefix(r.URL.Path, ProbePath) {
 			if o.Stats != nil {
 				o.Stats.reject("blocked")
 			}
@@ -289,6 +292,14 @@ func newWithClock(upstream *url.URL, entries func() map[string]Entry, appKeys fu
 		}
 		res, id := CheckSkew(r.Header.Get(Header), entries(), appKeys(), t, skew)
 		if res != OK {
+			if blocked {
+				// Already misbehaving: no extra bookkeeping, same plain 404.
+				if o.Stats != nil {
+					o.Stats.reject("blocked")
+				}
+				http.NotFound(w, r)
+				return
+			}
 			if o.Limiter != nil {
 				o.Limiter.Fail(ip, t)
 			}

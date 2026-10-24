@@ -155,8 +155,8 @@ func TestHandlerBehindCDN(t *testing.T) {
 			t.Fatal("bad token must 404")
 		}
 	}
-	if do("198.51.100.66", good) != 404 {
-		t.Fatal("the scanner's own address is now blocked")
+	if do("198.51.100.66", "bad") != 404 {
+		t.Fatal("the scanner's own address is now blocked for bad tokens")
 	}
 	// ...but honest users behind the same edge are untouched
 	if do("203.0.113.10", good) != 200 || do("203.0.113.11", good) != 200 {
